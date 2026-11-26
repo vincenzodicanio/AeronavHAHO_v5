@@ -1,0 +1,2918 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#090e17" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" href="./icon-192.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./icon-192.svg" />
+  <title>AERONAV HAHO - Navigazione Tattica 64st</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #090e17;
+      --panel: #0f172a;
+      --card: #162033;
+      --border: #28364f;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #22c55e;
+      --amber: #f59e0b;
+      --danger: #ef4444;
+      --cyan: #38bdf8;
+      --topbar-h: 76px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    html, body {
+      height: 100%;
+      width: 100%;
+      max-width: 100vw;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+    /* Shell dell'app bloccata: nessuno scroll del documento (la barra in alto non puo' essere spostata fuori schermo) */
+    body {
+      position: fixed;
+      inset: 0;
+      overscroll-behavior: none;
+    }
+
+    /* Top Bar Responsive */
+    .topbar {
+      background: #060a11;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      gap: 6px;
+      z-index: 1200;
+      position: relative;
+      flex: none;
+      width: 100%;
+    }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      flex: 1 1 auto;
+    }
+    .tab-btn {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 6px 6px;
+      border-radius: 6px;
+      font-size: 10.5px;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+      flex: 1 1 0;
+      text-align: center;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: #041309;
+      border-color: var(--accent);
+    }
+    .top-tools {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+      flex: 1 1 100%;
+    }
+    @media (min-width: 820px) {
+      .tabs { flex: 0 0 auto; }
+      .tab-btn { flex: 0 0 auto; padding: 6px 10px; font-size: 11px; }
+      .top-tools { flex: 0 0 auto; justify-content: flex-end; }
+    }
+    .tool-btn {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 6px;
+      border-radius: 6px;
+      font-size: 10.5px;
+      font-weight: 800;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+      text-align: center;
+      flex: 1 1 0;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    @media (min-width: 820px) {
+      .tool-btn { flex: 0 0 auto; padding: 6px 10px; font-size: 11px; }
+    }
+    .tool-btn.on { background: rgba(56, 189, 248, 0.2); border-color: var(--cyan); color: var(--cyan); }
+    .tool-btn.sim-on { background: var(--amber); color: #1c1002; border-color: var(--amber); }
+    .tool-btn.pick-on { background: var(--danger); color: #fff; border-color: #fff; animation: pulseBtn 1.2s infinite; }
+
+    @keyframes pulseBtn {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.72; }
+    }
+
+    /* Tab Views */
+    .view {
+      overflow: hidden;
+      display: none;
+      height: calc(100vh - var(--topbar-h));
+      height: calc(100dvh - var(--topbar-h));
+      width: 100%;
+      position: relative;
+    }
+    .view.active { display: block; }
+
+    /* Fullscreen Map Container & Compass Rotation */
+    #mapViewport {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: #090e17;
+    }
+    #mapRotator {
+      position: absolute;
+      width: 190vmax;
+      height: 190vmax;
+      left: 50%;
+      top: 78%;
+      transform: translate(-50%, -50%) rotate(0deg);
+      transform-origin: center center;
+      transition: transform 0.15s linear;
+    }
+    #map { width: 100%; height: 100%; }
+
+    /* Pulsante Floating AUTO ZOOM in basso a destra */
+    .fab-autozoom {
+      position: absolute;
+      right: 12px;
+      bottom: 18px;
+      z-index: 980;
+      background: rgba(9, 14, 23, 0.92);
+      backdrop-filter: blur(8px);
+      border: 1.5px solid var(--border);
+      color: var(--muted);
+      padding: 10px 13px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.65);
+      transition: all 0.18s ease;
+      user-select: none;
+    }
+    .fab-autozoom:active { transform: scale(0.96); }
+    .fab-autozoom.on {
+      background: rgba(34, 197, 94, 0.22);
+      border-color: var(--accent);
+      color: var(--accent);
+      box-shadow: 0 0 14px rgba(34, 197, 94, 0.35);
+    }
+    .fab-autozoom svg {
+      width: 15px;
+      height: 15px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2.3;
+    }
+
+    /* Campi Dati Garmin GPSMAP 64st + MGRS posizionati IN ALTO */
+    .top-telemetry-stack {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      right: 8px;
+      z-index: 950;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      pointer-events: none;
+    }
+    .garmin-row-top {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .garmin-row-bottom {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+    .g-field {
+      background: rgba(9, 14, 23, 0.92);
+      backdrop-filter: blur(8px);
+      border: 1.5px solid #334155;
+      border-radius: 8px;
+      padding: 5px 6px;
+      text-align: center;
+      pointer-events: auto;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+      min-width: 0;
+    }
+    .g-label {
+      font-size: 9.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--muted);
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .g-value {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 20px;
+      font-weight: 900;
+      line-height: 1.05;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    @media (max-width: 380px) {
+      .g-value { font-size: 18px; }
+      .g-sub { font-size: 9px; }
+    }
+    .g-sub {
+      font-family: ui-monospace, monospace;
+      font-size: 9.5px;
+      color: var(--cyan);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .status-ok { border-color: var(--accent) !important; }
+    .status-ok .g-value { color: var(--accent); }
+    .status-high { border-color: var(--cyan) !important; }
+    .status-high .g-value { color: var(--cyan); }
+    .status-low { border-color: var(--danger) !important; }
+    .status-low .g-value { color: var(--danger); }
+
+    /* Barra compatta MGRS sotto i campi dati in alto */
+    .mgrs-strip {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      background: rgba(9, 14, 23, 0.88);
+      backdrop-filter: blur(6px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px 8px;
+      pointer-events: auto;
+    }
+    .mgrs-strip > div { min-width: 0; }
+    .hud-mgrs-lbl { font-size: 8.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+    .hud-mgrs-val {
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--cyan);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .hud-target-val {
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--amber);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Banner informativo per selezione con tap su mappa */
+    .tap-banner {
+      display: none;
+      background: rgba(239, 68, 68, 0.94);
+      color: #fff;
+      font-size: 10.5px;
+      font-weight: 800;
+      text-align: center;
+      padding: 6px 8px;
+      border-radius: 8px;
+      letter-spacing: 0.3px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      pointer-events: auto;
+    }
+    .tap-banner.visible { display: block; }
+
+    /* Mirino di riferimento centrato in basso sulla posizione */
+    .center-reticle {
+      position: absolute;
+      left: 50%;
+      top: 78%;
+      transform: translate(-50%, -50%);
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 1.5px dashed rgba(56, 189, 248, 0.45);
+      pointer-events: none;
+      z-index: 880;
+    }
+    .center-reticle::before {
+      content: "";
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 3px;
+      height: 10px;
+      background: var(--danger);
+      border-radius: 2px;
+    }
+
+    /* Second & Third Tabs Scroll Container */
+    .config-scroll {
+      height: 100%;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .panel-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .panel-title {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--cyan);
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .alt-row {
+      display: grid;
+      grid-template-columns: 1.1fr 1.6fr 0.7fr auto;
+      gap: 6px;
+      align-items: end;
+      padding: 8px 6px;
+      border-radius: 6px;
+      border-bottom: 1px solid rgba(40, 54, 79, 0.7);
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .alt-row:last-child { border-bottom: none; }
+    .alt-row.selected-row {
+      background: rgba(245, 158, 11, 0.14);
+      border: 1px solid rgba(245, 158, 11, 0.65);
+    }
+    .alt-row.active-nav-row {
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.6);
+    }
+    @media (max-width: 600px) {
+      .alt-row { grid-template-columns: 1fr 1fr; }
+      .alt-actions {
+        grid-column: 1 / -1;
+        display: grid !important;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 6px;
+      }
+    }
+    .alt-row.dip-hidden input { opacity: 0.6; }
+    .btn-vis {
+      background: rgba(34, 211, 238, 0.14);
+      color: var(--cyan);
+      border: 1px solid rgba(34, 211, 238, 0.55);
+      border-radius: 6px;
+      padding: 8px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      text-align: center;
+    }
+    .btn-vis.off {
+      background: #1e293b;
+      color: var(--muted);
+      border-color: var(--border);
+    }
+    .btn-vis:disabled { opacity: 0.7; cursor: default; }
+    .btn-del {
+      background: rgba(239, 68, 68, 0.12);
+      color: var(--danger);
+      border: 1px solid rgba(239, 68, 68, 0.5);
+      border-radius: 6px;
+      padding: 8px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+    }
+    .btn-del:disabled { opacity: 0.35; cursor: default; }
+    .btn-add-dip {
+      width: 100%;
+      margin-top: 8px;
+      background: rgba(34, 197, 94, 0.14);
+      color: var(--accent);
+      border: 1px dashed rgba(34, 197, 94, 0.6);
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .alt-empty { color: var(--muted); font-size: 11px; padding: 8px 6px; }
+    label { display: block; font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+    input {
+      width: 100%;
+      background: #090e17;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: ui-monospace, monospace;
+    }
+    input:focus { outline: none; border-color: var(--cyan); }
+    .btn-act {
+      background: var(--accent);
+      color: #041309;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+      text-align: center;
+    }
+    .btn-dem {
+      background: #1e293b;
+      color: var(--cyan);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+    }
+    .btn-map-set {
+      background: rgba(245, 158, 11, 0.18);
+      color: var(--amber);
+      border: 1px solid rgba(245, 158, 11, 0.5);
+      border-radius: 6px;
+      padding: 8px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    /* Segmented Unit Switchers & Compass Calibration Dial */
+    .unit-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      background: #090e17;
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .unit-opt {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--muted);
+      padding: 9px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s ease;
+    }
+    .unit-opt.active {
+      background: rgba(34, 197, 94, 0.2);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .compass-cal-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+    }
+    .compass-dial {
+      position: relative;
+      width: 148px;
+      height: 148px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #0f172a 55%, #060a11 100%);
+      border: 2px solid var(--border);
+      box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .compass-rose {
+      position: absolute;
+      inset: 8px;
+      border-radius: 50%;
+      transition: transform 0.12s linear;
+    }
+    .compass-rose span {
+      position: absolute;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .c-n { top: 2px; left: 50%; transform: translateX(-50%); color: var(--danger); }
+    .c-s { bottom: 2px; left: 50%; transform: translateX(-50%); color: var(--muted); }
+    .c-e { right: 5px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+    .c-w { left: 5px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+    .compass-lubber {
+      position: absolute;
+      top: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 4px;
+      height: 14px;
+      background: var(--amber);
+      border-radius: 2px;
+      z-index: 5;
+    }
+    .compass-readout {
+      text-align: center;
+      z-index: 4;
+    }
+    .compass-deg-big {
+      font-family: ui-monospace, monospace;
+      font-size: 26px;
+      font-weight: 900;
+      color: var(--cyan);
+      line-height: 1.05;
+    }
+    .compass-sub-lbl {
+      font-family: ui-monospace, monospace;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .cal-progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #090e17;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .cal-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--amber), var(--accent));
+      transition: width 0.15s linear;
+    }
+
+    .leaflet-div-icon { background: transparent; border: none; }
+
+    /* Etichette marker DIP su mappa */
+    .dip-pin-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+    }
+    .dip-pin-dot-active {
+      width: 22px;
+      height: 22px;
+      background: #ef4444;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 14px #ef4444;
+    }
+    .dip-pin-dot-alt {
+      width: 18px;
+      height: 18px;
+      background: #f59e0b;
+      border: 2.5px solid #090e17;
+      border-radius: 50%;
+      box-shadow: 0 0 8px rgba(245, 158, 11, 0.85);
+    }
+    .dip-pin-lbl {
+      margin-top: 2px;
+      background: rgba(9, 14, 23, 0.9);
+      color: #f8fafc;
+      border: 1px solid #334155;
+      font-family: ui-monospace, monospace;
+      font-size: 9px;
+      font-weight: 800;
+      padding: 1px 4px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .dip-pin-lbl.active {
+      border-color: #ef4444;
+      color: #fca5a5;
+    }
+
+    /* ===== TEAM LIVE ===== */
+    .tab-btn.team-on:not(.active) { border-color: var(--cyan); color: var(--cyan); }
+    .tab-btn.team-off:not(.active) { border-color: rgba(245, 158, 11, 0.7); color: var(--amber); }
+    @media (max-width: 420px) {
+      .tab-btn { font-size: 9.5px; padding: 6px 3px; }
+    }
+    .team-badge {
+      font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 10px;
+      border: 1px solid var(--border); color: var(--muted);
+    }
+    .team-badge.on { color: var(--accent); border-color: var(--accent); }
+    .team-badge.off { color: var(--amber); border-color: rgba(245, 158, 11, 0.55); }
+    .team-msg { display: none; font-size: 11px; line-height: 1.4; margin-bottom: 10px; color: var(--amber); word-break: break-word; }
+    .team-msg.show { display: block; }
+    .team-msg.ok { color: var(--accent); }
+    .team-invite {
+      display: none; margin-bottom: 10px; padding: 8px 10px; border-radius: 6px;
+      background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.5);
+      font-size: 11px; line-height: 1.45; color: var(--text);
+    }
+    .team-invite.show { display: block; }
+    .team-group-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; }
+    .team-group-name { font-size: 15px; font-weight: 800; word-break: break-word; }
+    .team-code { font-family: ui-monospace, monospace; font-size: 22px; font-weight: 800; letter-spacing: 2px; color: var(--cyan); }
+    .team-sub { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.4; }
+    .team-row {
+      display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center;
+      padding: 9px 6px; border-bottom: 1px solid rgba(40, 54, 79, 0.7);
+    }
+    .team-row:last-child { border-bottom: none; }
+    .team-row.goto { cursor: pointer; }
+    .team-row.stale { opacity: 0.5; }
+    .team-nick { font-weight: 800; font-size: 13px; display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .team-nick span.nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .team-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+    .team-meta { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; margin-top: 2px; }
+    .team-right { text-align: right; font-family: ui-monospace, monospace; font-size: 13px; font-weight: 800; }
+    .team-right small { display: block; color: var(--muted); font-size: 10px; font-weight: 600; }
+    /* Marker dei compagni sulla mappa: 0x0 sul punto, ruotano come i pin DIP per restare leggibili in HDG UP */
+    .team-pin-wrap { position: relative; width: 0; height: 0; transform-origin: 0 0; pointer-events: none; }
+    .team-pin-dot {
+      position: absolute; left: -8px; top: -8px; width: 16px; height: 16px; border-radius: 50%;
+      background: var(--c); border: 2.5px solid #ffffff; box-shadow: 0 0 9px var(--c);
+    }
+    .team-pin-lbl {
+      position: absolute; left: 0; top: 11px; transform: translateX(-50%);
+      background: rgba(9, 14, 23, 0.9); color: #f8fafc; border: 1px solid var(--c);
+      font-family: ui-monospace, monospace; font-size: 9px; font-weight: 800;
+      padding: 1px 4px; border-radius: 4px; white-space: nowrap;
+    }
+    .team-pin-wrap.stale { opacity: 0.45; }
+    /* Pulsante flottante INQUADRA TEAM (sopra AUTO ZOOM) */
+    .fab-autozoom.fab-teamfit { bottom: 66px; }
+    .fab-autozoom.fab-teamfit.on {
+      background: rgba(56, 189, 248, 0.22);
+      border-color: var(--cyan);
+      color: var(--cyan);
+      box-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
+    }
+    /* ===== ORIENTAMENTO SCHERMO: pulsante + layout orizzontale (campi dati a destra) ===== */
+    .tool-btn.lock-on { background: rgba(245, 158, 11, 0.2); border-color: var(--amber); color: var(--amber); }
+    .orient-toast {
+      display: none; position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+      z-index: 3000; max-width: 90vw; text-align: center;
+      background: rgba(9, 14, 23, 0.96); color: var(--text); border: 1px solid var(--amber);
+      font-size: 11px; font-weight: 700; line-height: 1.4; padding: 8px 12px; border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    }
+    .orient-toast.show { display: block; }
+    @media (orientation: landscape) {
+      :root { --hud-w: clamp(250px, 34vw, 340px); }
+      /* la mappa (e il suo mirino) occupa solo la parte sinistra; i campi dati stanno in una colonna a destra */
+      #mapViewport { right: var(--hud-w); }
+      #viewMap .top-telemetry-stack {
+        top: 0; right: 0; bottom: 0; left: auto;
+        width: var(--hud-w);
+        padding: 8px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        background: #060a11;
+        border-left: 1px solid var(--border);
+        pointer-events: auto;
+      }
+      .garmin-row-bottom .g-value { font-size: 17px; }
+      .mgrs-strip { flex-direction: column; align-items: stretch; gap: 3px; }
+      .mgrs-strip > div { text-align: left !important; }
+    }
+    /* telefono in orizzontale (poca altezza): campi dati piu' compatti */
+    @media (orientation: landscape) and (max-height: 520px) {
+      #viewMap .top-telemetry-stack { padding: 6px; gap: 5px; }
+      .g-value { font-size: 16px; }
+      .garmin-row-bottom .g-value { font-size: 15px; }
+      .g-field { padding: 3px 5px; }
+      .g-label { font-size: 8.5px; margin-bottom: 1px; }
+      .g-sub { font-size: 8.5px; margin-top: 1px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar" id="topbar">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="viewMap">MAPPA</button>
+      <button class="tab-btn" data-tab="viewTargets" id="tabTargets">DIP / ALT (5)</button>
+      <button class="tab-btn" data-tab="viewTeam" id="tabTeam">TEAM</button>
+      <button class="tab-btn" data-tab="viewSettings">IMPOSTAZIONI</button>
+      <a href="./index.html" class="tab-btn" style="text-decoration:none; color:var(--amber); border-color:rgba(245,158,11,0.45);">PLANNER</a>
+    </div>
+    <div class="top-tools">
+      <button id="btnInstall" class="tool-btn on" style="display:none;">INSTALLA</button>
+      <button id="btnTapDip" class="tool-btn" title="Tocca un punto su mappa per aggiungere un DIP alternativo">TAP DIP</button>
+      <button id="btnCompass" class="tool-btn on" title="Orientamento Bussola">HDG UP</button>
+      <button id="btnCenter" class="tool-btn on" title="Centra su GPS">GPS</button>
+      <button id="btnOrient" class="tool-btn" title="Orientamento schermo: AUTO / ORIZZONTALE / VERTICALE">↻ AUTO</button>
+      <button id="btnSim" class="tool-btn" title="Simulatore Volo">SIM</button>
+    </div>
+  </header>
+
+  <!-- SCHEDA 1: MAPPA A TUTTO SCHERMO CON EFFICIENZE IN ALTO E POSIZIONE CENTRATA IN BASSO -->
+  <section id="viewMap" class="view active">
+    <div id="mapViewport">
+      <div class="center-reticle"></div>
+      <div id="mapRotator">
+        <div id="map"></div>
+      </div>
+
+      <!-- Pulsante Floating AUTO ZOOM in basso a destra -->
+      <button id="btnAutoZoom" class="fab-autozoom on" title="Zoom automatico tra posizione GPS e DIP attivo">
+        <svg viewBox="0 0 24 24">
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <polyline points="9 21 3 21 3 15"></polyline>
+          <line x1="21" y1="3" x2="14" y2="10"></line>
+          <line x1="3" y1="21" x2="10" y2="14"></line>
+        </svg>
+        <span>AUTO ZOOM</span>
+      </button>
+
+      <!-- Pulsante Floating INQUADRA TEAM (visibile solo se sei in un gruppo) -->
+      <button id="btnTeamFit" class="fab-autozoom fab-teamfit" style="display:none;" title="Inquadra sulla mappa te e tutti i compagni">
+        <svg viewBox="0 0 24 24">
+          <circle cx="9" cy="8" r="3"></circle>
+          <circle cx="17" cy="9" r="2.5"></circle>
+          <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"></path>
+          <path d="M15 15.2c.6-.2 1.3-.3 2-.3 2.2 0 4 1.8 4 4"></path>
+        </svg>
+        <span id="btnTeamFitLbl">INQUADRA TEAM</span>
+      </button>
+
+    </div>
+
+      <!-- Campi Dati Garmin GPSMAP 64st + MGRS: in alto in verticale, colonna a destra in orizzontale -->
+      <div class="top-telemetry-stack">
+        <!-- Riga 1: Efficienza Reale e Efficienza a Destinazione -->
+        <div class="garmin-row-top">
+          <div class="g-field">
+            <div class="g-label">EFFICIENZA (REALE)</div>
+            <div class="g-value" id="valGlideReal">---</div>
+            <div class="g-sub" id="subAltMsl">QUOTA: -- ft MSL</div>
+          </div>
+          <div class="g-field" id="cardGlideDest">
+            <div class="g-label">EFFICIENZA A DEST.</div>
+            <div class="g-value" id="valGlideDest">---</div>
+            <div class="g-sub" id="subGlideStatus">IN ATTESA GPS</div>
+          </div>
+        </div>
+
+        <!-- Riga 2: Distanza dal DIP, Velocita al suolo e Direzione -->
+        <div class="garmin-row-bottom">
+          <div class="g-field">
+            <div class="g-label">DISTANZA DIP</div>
+            <div class="g-value" id="valDist">-- km</div>
+            <div class="g-sub" id="subEte">ETE: --:--</div>
+          </div>
+          <div class="g-field">
+            <div class="g-label">VELOCITÀ</div>
+            <div class="g-value" id="valSpeed">0.0 kt</div>
+            <div class="g-sub" id="subSpeedAlt">0.0 m/s</div>
+          </div>
+          <div class="g-field">
+            <div class="g-label">DIREZIONE</div>
+            <div class="g-value" id="valHeading">000°</div>
+            <div class="g-sub" id="subBrgDip">DIP: ---°</div>
+          </div>
+        </div>
+
+        <!-- Barra compatta coordinate WGRS / MGRS -->
+        <div class="mgrs-strip">
+          <div>
+            <div class="hud-mgrs-lbl">POS (WGRS / MGRS)</div>
+            <div class="hud-mgrs-val" id="hudPosMgrs">ACQUISIZIONE GPS...</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="hud-mgrs-lbl" id="hudTargetName">DIP ATTIVO</div>
+            <div class="hud-target-val" id="hudDipMgrs">---</div>
+          </div>
+        </div>
+
+        <!-- Banner attivo quando si seleziona un punto con tap su mappa -->
+        <div id="tapBanner" class="tap-banner">
+          TOCCA UN DIP ESISTENTE O UN PUNTO SULLA MAPPA PER SELEZIONARLO
+        </div>
+      </div>
+  </section>
+
+  <!-- SCHEDA 2: IMPOSTAZIONE HARP, DIP PRINCIPALE E DIP ALTERNATIVI (quanti si vuole) IN MGRS -->
+  <section id="viewTargets" class="view">
+    <div class="config-scroll">
+      <div class="panel-box">
+        <div class="panel-title">
+          <span>HARP &amp; BERSAGLIO PRINCIPALE</span>
+          <span id="cfgMsg" style="color:var(--amber); font-size:10px;">MGRS / WGRS</span>
+        </div>
+        <div class="grid-2" style="margin-bottom:8px;">
+          <div>
+            <label>HARP (MGRS)</label>
+            <input type="text" id="cfgHarpMgrs" placeholder="32T PP 25000 38820" />
+          </div>
+          <div>
+            <label>Calibrazione Quota GPS (<span class="unit-alt-txt">ft</span>)</label>
+            <input type="number" id="cfgAltOffset" value="0" step="5" />
+          </div>
+        </div>
+        <div id="row_main" class="alt-row" style="border-bottom:none;">
+          <div>
+            <label>Nome DIP Principale</label>
+            <input type="text" id="mainDipName" value="DIP PRIMARIO" />
+          </div>
+          <div>
+            <label>Coordinate MGRS</label>
+            <input type="text" id="mainDipMgrs" value="32T PP 32840 38820" />
+          </div>
+          <div>
+            <label>Quota (<span class="unit-alt-txt">ft</span>)</label>
+            <input type="number" id="mainDipElev" value="100" />
+          </div>
+          <div class="alt-actions" style="display:flex; gap:4px; flex-wrap:wrap;">
+            <button class="btn-vis" id="visBtn_main" onclick="toggleDipVisible('main')">● VISIBILE</button>
+            <button class="btn-map-set" onclick="pickSlotOnMap('main')" title="Posiziona con tap su mappa">MAPPA</button>
+            <button class="btn-dem" onclick="fetchRowDem('main')">DEM</button>
+            <button class="btn-act" onclick="activateTarget('main')">ATTIVA</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-box">
+        <div class="panel-title">
+          <span id="altDipsTitle">DIP ALTERNATIVI DI EMERGENZA (5)</span>
+          <span>PREMI ATTIVA PER NAVIGARE</span>
+        </div>
+        <div id="altDipsContainer"></div>
+        <button type="button" class="btn-add-dip" id="btnAddDip" onclick="addAltDip()">+ AGGIUNGI DIP ALTERNATIVO</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCHEDA 3: IMPOSTAZIONI (CALIBRAZIONE BUSSOLA & UNITÀ DI MISURA) -->
+  <section id="viewSettings" class="view">
+    <div class="config-scroll">
+      <!-- Sezione 1: Calibrazione Bussola Magnetica & Offset -->
+      <div class="panel-box">
+        <div class="panel-title">
+          <span>CALIBRAZIONE BUSSOLA MAGNETICA</span>
+          <span id="calStatusBadge" style="color:var(--accent); font-size:10px;">PRONTA</span>
+        </div>
+
+        <div class="compass-cal-box">
+          <div class="compass-dial">
+            <div class="compass-lubber"></div>
+            <div class="compass-rose" id="calCompassRose">
+              <span class="c-n">N</span>
+              <span class="c-e">E</span>
+              <span class="c-s">S</span>
+              <span class="c-w">W</span>
+            </div>
+            <div class="compass-readout">
+              <div class="compass-deg-big" id="calLiveDeg">000°</div>
+              <div class="compass-sub-lbl" id="calRawSub">RAW: ---° | OFF: 0°</div>
+            </div>
+          </div>
+
+          <div class="cal-progress-bar">
+            <div class="cal-progress-fill" id="calProgressFill"></div>
+          </div>
+          <div id="calGuideText" style="font-size:11px; color:var(--muted); text-align:center; line-height:1.35;">
+            Premi <strong>AVVIA CALIBRAZIONE 8</strong> e ruota lo smartphone formando un 8 nello spazio per 10 secondi per azzerare le interferenze magnetiche.
+          </div>
+
+          <div class="grid-2" style="width:100%; margin-top:4px;">
+            <button class="btn-act" id="btnStartCal8" style="background:var(--cyan); color:#04131c;">AVVIA CALIBRAZIONE 8</button>
+            <button class="btn-map-set" id="btnAlignDipHdg">ALLINEA A ROTTA DIP</button>
+          </div>
+        </div>
+
+        <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
+          <div class="grid-2" style="align-items:end;">
+            <div>
+              <label>Offset / Declinazione Magnetica (°)</label>
+              <input type="number" id="cfgCompassOffset" min="-180" max="180" step="1" value="0" />
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="btn-dem" style="flex:1;" onclick="adjustCompassOffset(-1)">-1°</button>
+              <button class="btn-dem" style="flex:1;" onclick="adjustCompassOffset(1)">+1°</button>
+              <button class="btn-dem" style="flex:1;" onclick="resetCompassOffset()">0°</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sezione: Tipo di mappa (stradale / satellitare) -->
+      <div class="panel-box">
+        <div class="panel-title">
+          <span>MAPPA DI SFONDO</span>
+          <span style="color:var(--amber); font-size:10px;">SALVATAGGIO AUTOMATICO</span>
+        </div>
+        <div class="unit-group">
+          <button type="button" class="unit-opt active" id="optMapOsm" data-map-type="osm">STRADALE (OSM)</button>
+          <button type="button" class="unit-opt" id="optMapSat" data-map-type="sat">SATELLITE</button>
+        </div>
+        <div id="mapSummaryNote" style="font-size:11px; color:var(--muted); margin-top:10px; line-height:1.4;">
+          Satellite = Esri World Imagery. Le porzioni di mappa che visualizzi (a ogni zoom) vengono salvate automaticamente e riutilizzate offline; le zone mai viste restano vuote senza connessione. Sincronizzata anche con il Planner HAHO.
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px;">
+          <span id="tileCacheInfo" style="font-size:11px; color:var(--muted);">Mappe salvate: --</span>
+          <button type="button" class="btn-dem" id="btnClearTiles" style="padding:6px 10px;">SVUOTA</button>
+        </div>
+      </div>
+
+      <!-- Sezione 2: Unità di Misura (ft, m, knots, m/s) -->
+      <div class="panel-box">
+        <div class="panel-title">
+          <span>UNITÀ DI MISURA TELEMETRIA</span>
+          <span style="color:var(--amber); font-size:10px;">SALVATAGGIO AUTOMATICO</span>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <label>Quota &amp; Distanza (Altitudine / Distanza DIP)</label>
+          <div class="unit-group">
+            <button type="button" class="unit-opt active" id="optAltFt" data-alt-unit="ft">PIEDI (ft)</button>
+            <button type="button" class="unit-opt" id="optAltM" data-alt-unit="m">METRI (m)</button>
+          </div>
+        </div>
+
+        <div>
+          <label>Velocità Orizzontale &amp; Rateo di Discesa</label>
+          <div class="unit-group">
+            <button type="button" class="unit-opt active" id="optSpdKt" data-spd-unit="kt">NODI (knots)</button>
+            <button type="button" class="unit-opt" id="optSpdMs" data-spd-unit="ms">METRI/SEC (m/s)</button>
+          </div>
+        </div>
+
+        <div id="unitSummaryNote" style="font-size:11px; color:var(--muted); margin-top:10px; line-height:1.4;">
+          Configurazione attiva: quote in <strong style="color:var(--text);">piedi (ft)</strong>, velocità in <strong style="color:var(--text);">nodi (knots)</strong>. Sincronizzata automaticamente anche con il Planner HAHO.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCHEDA TEAM: TEAM LIVE (nickname, gruppi, inviti, posizioni condivise ogni 5 s) -->
+  <section id="viewTeam" class="view">
+    <div class="config-scroll">
+      <div class="panel-box">
+        <div class="panel-title">
+          <span>TEAM LIVE</span>
+          <span id="teamStatus" class="team-badge">NON IN GRUPPO</span>
+        </div>
+        <div id="teamMsg" class="team-msg"></div>
+
+        <!-- Non sei in un gruppo -->
+        <div id="teamJoinBox">
+          <div id="teamInvite" class="team-invite"></div>
+          <label>Il tuo nickname (2-16 caratteri)</label>
+          <input type="text" id="teamNick" maxlength="16" autocomplete="off" placeholder="es. MARCO" />
+          <div class="grid-2" style="margin-top:10px;">
+            <div>
+              <label>Nome gruppo (opzionale)</label>
+              <input type="text" id="teamGroupName" maxlength="30" autocomplete="off" placeholder="es. DZ Sabato" />
+            </div>
+            <div style="display:flex; align-items:flex-end;">
+              <button type="button" class="btn-act" id="btnTeamCreate" style="width:100%;">CREA GRUPPO</button>
+            </div>
+          </div>
+          <div class="grid-2" style="margin-top:10px;">
+            <div>
+              <label>Codice gruppo</label>
+              <input type="text" id="teamCode" maxlength="9" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX" />
+            </div>
+            <div style="display:flex; align-items:flex-end;">
+              <button type="button" class="btn-map-set" id="btnTeamJoin" style="width:100%;">ENTRA</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sei in un gruppo -->
+        <div id="teamGroupBox" style="display:none;">
+          <div class="team-group-head">
+            <div>
+              <div class="hud-mgrs-lbl">GRUPPO</div>
+              <div class="team-group-name" id="teamGroupTitle">--</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="hud-mgrs-lbl">CODICE</div>
+              <div class="team-code" id="teamCodeBig">----</div>
+            </div>
+          </div>
+          <div class="grid-2" style="margin-top:10px;">
+            <button type="button" class="btn-act" id="btnTeamInvite">INVITA</button>
+            <button type="button" class="btn-dem" id="btnTeamLeave" style="color:var(--danger);">ESCI DAL GRUPPO</button>
+          </div>
+          <div class="team-sub">Sei <strong id="teamMyNick" style="color:var(--text);">--</strong>. La tua posizione viene inviata e aggiornata ogni 5 secondi tramite la rete dati. Tieni lo schermo acceso durante il volo.</div>
+        </div>
+      </div>
+
+      <div class="panel-box" id="teamMembersBox" style="display:none;">
+        <div class="panel-title">
+          <span>MEMBRI</span>
+          <span id="teamCount" style="color:var(--muted); font-size:10px;">0</span>
+        </div>
+        <div id="teamList"></div>
+        <button type="button" class="btn-map-set" id="btnTeamFitTab" style="width:100%; margin-top:8px;">INQUADRA TUTTO IL TEAM SULLA MAPPA</button>
+        <div class="team-sub" style="margin-top:6px;">Tocca un compagno per centrare la mappa su di lui. Distanza e rotta sono calcolate dalla tua posizione.</div>
+      </div>
+
+      <div class="panel-box">
+        <div class="panel-title">
+          <span>SERVER TEAM</span>
+          <span id="teamServerNote" style="color:var(--amber); font-size:10px;"></span>
+        </div>
+        <label>Indirizzo del server (https://...)</label>
+        <input type="url" id="teamServer" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://aeronav.tuodominio.it" />
+        <div class="grid-2" style="margin-top:8px;">
+          <button type="button" class="btn-dem" id="btnTeamServerSave">SALVA</button>
+          <button type="button" class="btn-dem" id="btnTeamServerTest">TEST CONNESSIONE</button>
+        </div>
+        <div class="team-sub">Il server gira sul tuo NAS. Il link d'invito include l'indirizzo, così chi lo apre non deve digitarlo.</div>
+      </div>
+    </div>
+  </section>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="./mgrs-core.js"></script>
+  <script src="./team-client.js"></script>
+  <script>
+    const MISSION_KEY = "aeronav_haho_mission_v1";
+    const NAV_KEY = "aeronav_haho_nav_v2";
+
+    // Se per qualsiasi motivo documento o contenitori mappa vengono scrollati, riporta tutto a zero
+    function resetShellScroll() {
+      const se = document.scrollingElement || document.documentElement;
+      if (se.scrollTop || se.scrollLeft) { se.scrollTop = 0; se.scrollLeft = 0; }
+      if (document.body.scrollTop || document.body.scrollLeft) { document.body.scrollTop = 0; document.body.scrollLeft = 0; }
+      ["mapViewport", "viewMap", "viewTargets", "viewSettings", "viewTeam"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && (el.scrollTop || el.scrollLeft)) { el.scrollTop = 0; el.scrollLeft = 0; }
+      });
+    }
+    window.addEventListener("scroll", (e) => {
+      const t = e.target;
+      if (t === document || t === document.documentElement || t === document.body ||
+          (t && (t.id === "mapViewport" || t.id === "viewMap" || t.id === "viewTargets" || t.id === "viewSettings" || t.id === "viewTeam"))) {
+        resetShellScroll();
+      }
+    }, true);
+
+    function syncTopbarHeight() {
+      const tb = document.getElementById("topbar");
+      if (tb) {
+        document.documentElement.style.setProperty("--topbar-h", tb.offsetHeight + "px");
+      }
+    }
+    window.addEventListener("resize", syncTopbarHeight);
+    window.addEventListener("orientationchange", syncTopbarHeight);
+    syncTopbarHeight();
+
+    let navState = {
+      harpLat: 43.6812,
+      harpLon: 10.5200,
+      activeId: "main",
+      altOffsetFt: 0,
+      compassOffsetDeg: 0,
+      altUnit: "ft",   // "ft" | "m"
+      spdUnit: "kt",   // "kt" | "ms"
+      mainDip: { name: "DIP PRIMARIO", lat: 43.6812, lon: 10.6305, elevFt: 100 },
+      altDips: [
+        { name: "ALT 1 NORD", lat: 43.7050, lon: 10.6250, elevFt: 80 },
+        { name: "ALT 2 SUD", lat: 43.6550, lon: 10.6350, elevFt: 110 },
+        { name: "ALT 3 EST", lat: 43.6820, lon: 10.6650, elevFt: 120 },
+        { name: "ALT 4 OVEST", lat: 43.6800, lon: 10.5950, elevFt: 70 },
+        { name: "ALT 5 RISERVA", lat: 43.6920, lon: 10.6480, elevFt: 95 }
+      ]
+    };
+
+    try {
+      const savedNav = JSON.parse(localStorage.getItem(NAV_KEY));
+      if (savedNav && savedNav.mainDip) navState = { ...navState, ...savedNav };
+    } catch (e) {}
+
+    try {
+      const mission = JSON.parse(localStorage.getItem(MISSION_KEY));
+      if (mission && Number.isFinite(mission.harpLat) && Number.isFinite(mission.dipLat)) {
+        navState.harpLat = mission.harpLat;
+        navState.harpLon = mission.harpLon;
+        navState.mainDip.lat = mission.dipLat;
+        navState.mainDip.lon = mission.dipLon;
+        navState.mainDip.elevFt = mission.dipElevFt || 100;
+      }
+    } catch (e) {}
+
+    let pendingSelectedSlot = null;
+    let autoZoom = true;
+    let navReady = false; // true a fine inizializzazione (evita calcoli prima che lo stato sia pronto)
+    let programmaticZoom = false;
+
+    function getActiveDip() {
+      if (navState.activeId === "main") return navState.mainDip;
+      const idx = parseInt(navState.activeId, 10);
+      return navState.altDips[idx] || navState.mainDip;
+    }
+
+    function setAutoZoomState(enabled) {
+      autoZoom = Boolean(enabled);
+      const btn = document.getElementById("btnAutoZoom");
+      if (btn) btn.classList.toggle("on", autoZoom);
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll(".tab-btn[data-tab]").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+      const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+      if (btn) btn.classList.add("active");
+      const view = document.getElementById(tabId);
+      if (view) view.classList.add("active");
+      syncTopbarHeight();
+      if (tabId === "viewMap") {
+        setTimeout(() => {
+          map.invalidateSize();
+          if (autoZoom) {
+            zoomToActiveTrack(false);
+          } else if (autoCenter && currentTelemetry.lat) {
+            centerMapOnPosition(currentTelemetry.lat, currentTelemetry.lon);
+          }
+          if (typeof teamFitTick === "function") teamFitTick(true);
+        }, 60);
+      } else if (tabId === "viewTargets") {
+        renderTargetConfig();
+      } else if (tabId === "viewSettings") {
+        startCompass();
+        renderSettingsUI();
+        updateTileCacheInfo();
+      } else if (tabId === "viewTeam") {
+        if (typeof renderTeamUI === "function") renderTeamUI();
+      }
+    }
+
+    document.querySelectorAll(".tab-btn[data-tab]").forEach(btn => {
+      btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+    });
+
+    const activeDip = getActiveDip();
+    L.Marker.mergeOptions({ keyboard: false });
+    const map = L.map("map", { zoomControl: false, attributionControl: false, zoomSnap: 0.25, keyboard: false }).setView([activeDip.lat, activeDip.lon], 13);
+    const MAP_KEY = "aeronav_haho_maptype_v1";
+    let mapType = "osm";
+    try { if (localStorage.getItem(MAP_KEY) === "sat") mapType = "sat"; } catch (e) {}
+
+    function buildBaseLayer(type) {
+      if (type === "sat") {
+        return L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+          maxZoom: 19,
+          maxNativeZoom: 18
+        });
+      }
+      return L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 });
+    }
+
+    let baseLayer = buildBaseLayer(mapType).addTo(map);
+
+    const TILE_CACHE_NAME = "aeronav-tiles-v1";
+
+    async function updateTileCacheInfo() {
+      const el = document.getElementById("tileCacheInfo");
+      if (!el) return;
+      try {
+        const cache = await caches.open(TILE_CACHE_NAME);
+        const n = (await cache.keys()).length;
+        el.textContent = "Mappe salvate offline: " + n.toLocaleString("it-IT") + " tasselli";
+      } catch (e) {
+        el.textContent = "Cache mappe non disponibile";
+      }
+    }
+
+    document.getElementById("btnClearTiles").addEventListener("click", async () => {
+      try { await caches.delete(TILE_CACHE_NAME); } catch (e) {}
+      updateTileCacheInfo();
+    });
+
+    function setMapType(type) {
+      if (type !== "osm" && type !== "sat") return;
+      mapType = type;
+      try { localStorage.setItem(MAP_KEY, mapType); } catch (e) {}
+      map.removeLayer(baseLayer);
+      baseLayer = buildBaseLayer(mapType).addTo(map);
+      baseLayer.bringToBack();
+      renderSettingsUI();
+    }
+
+    map.on("zoomstart", () => {
+      if (!programmaticZoom && autoZoom) {
+        setAutoZoomState(false);
+      }
+    });
+
+    function centerMapOnPosition(lat, lon) {
+      map.setView([lat, lon], map.getZoom(), { animate: false });
+    }
+
+    // ---- AUTO ZOOM: la mappa deve contenere sempre posizione corrente e DIP selezionato ----
+    // La mappa e' ruotata attorno al mirino (50% x, 78% y del viewport) quando e' attivo HDG UP,
+    // quindi il calcolo e' fatto nello spazio schermo, tenendo conto di rotazione e ingombro dei campi dati.
+    function getAutoZoomFrame() {
+      const viewportEl = document.getElementById("mapViewport");
+      const hudEl = document.querySelector(".top-telemetry-stack");
+      const W = viewportEl ? viewportEl.clientWidth : 0;
+      const H = viewportEl ? viewportEl.clientHeight : 0;
+      if (!W || !H) return null;
+      const ax = W / 2;
+      const ay = H * 0.78;
+      const landscape = window.matchMedia("(orientation: landscape)").matches;
+      // in orizzontale i campi dati sono in una colonna a destra (fuori dalla mappa): niente ingombro in alto
+      const hudBottom = landscape ? 0 : (hudEl ? (hudEl.offsetTop + hudEl.offsetHeight) : 185);
+      return {
+        W, H, ax, ay,
+        left: 36,
+        right: W - 36,
+        top: Math.min(hudBottom + 28, ay - 60),
+        bottom: Math.max(H - 72, ay + 40)
+      };
+    }
+
+    function getAutoZoomOrigin() {
+      const hasGps = currentTelemetry.lat !== null && Number.isFinite(currentTelemetry.lat);
+      return {
+        lat: hasGps ? currentTelemetry.lat : navState.harpLat,
+        lon: hasGps ? currentTelemetry.lon : navState.harpLon
+      };
+    }
+
+    // Rotazione CSS (senso orario, y verso il basso) di un vettore schermo
+    function rotScreen(x, y, deg) {
+      const a = deg * Math.PI / 180;
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
+      return { x: x * c - y * sn, y: x * sn + y * c };
+    }
+
+    function zoomToActiveTrack(animate = false) {
+      const f = getAutoZoomFrame();
+      if (!f) return;
+      const target = getActiveDip();
+      const P = getAutoZoomOrigin();
+      const Z0 = 10;
+      const ZMIN = 3;
+      const ZMAX = 17;
+
+      const p0 = map.project(L.latLng(P.lat, P.lon), Z0);
+      const d0 = map.project(L.latLng(target.lat, target.lon), Z0);
+      const rot = compassMode ? -smoothedHeading : 0;
+      const r = rotScreen(d0.x - p0.x, d0.y - p0.y, rot); // offset schermo del DIP rispetto alla posizione, a zoom Z0
+
+      // k = fattore di scala massimo (rispetto a Z0) che lascia entrambi i punti nell'area utile
+      let k = Infinity;
+      const consider = (num, comp) => {
+        if (Math.abs(comp) < 1e-6) return;
+        const v = Math.max(num, 1) / Math.abs(comp);
+        if (v < k) k = v;
+      };
+      if (autoCenter) {
+        // posizione fissa sul mirino: il DIP deve stare nei margini attorno al mirino
+        if (r.x > 0) consider(f.right - f.ax, r.x); else if (r.x < 0) consider(f.ax - f.left, r.x);
+        if (r.y > 0) consider(f.bottom - f.ay, r.y); else if (r.y < 0) consider(f.ay - f.top, r.y);
+      } else {
+        // mappa libera: i due punti devono stare nel rettangolo utile, centrati
+        consider(f.right - f.left, r.x);
+        consider(f.bottom - f.top, r.y);
+      }
+
+      let z = (k === Infinity) ? ZMAX : Z0 + Math.log2(k);
+      z = Math.floor(z * 4) / 4; // arrotondo per difetto: mai piu' vicino del necessario
+      z = Math.max(ZMIN, Math.min(ZMAX, z));
+
+      programmaticZoom = true;
+      if (autoCenter) {
+        map.setView([P.lat, P.lon], z, { animate });
+      } else {
+        const kz = Math.pow(2, z - Z0);
+        const cx = (f.left + f.right) / 2;
+        const cy = (f.top + f.bottom) / 2;
+        // vettore schermo che porta la posizione al punto tale che il centro dei due punti cada al centro dell'area utile
+        const need = rotScreen((cx - f.ax) - (r.x * kz) / 2, (cy - f.ay) - (r.y * kz) / 2, -rot);
+        const Pz = map.project(L.latLng(P.lat, P.lon), z);
+        const centerLL = map.unproject(L.point(Pz.x - need.x, Pz.y - need.y), z);
+        map.setView(centerLL, z, { animate });
+      }
+      setTimeout(() => { programmaticZoom = false; }, 120);
+    }
+
+    // Controllo leggero (es. quando ruota la bussola): se uno dei due punti esce dall'area utile, ricalcola
+    function ensureAutoZoomContains() {
+      if (!navReady || !autoZoom) return;
+      const f = getAutoZoomFrame();
+      if (!f) return;
+      const rot = compassMode ? -smoothedHeading : 0;
+      const size = map.getSize();
+      const toScreen = (lat, lon) => {
+        const cp = map.latLngToContainerPoint([lat, lon]);
+        const v = rotScreen(cp.x - size.x / 2, cp.y - size.y / 2, rot);
+        return { x: f.ax + v.x, y: f.ay + v.y };
+      };
+      const inside = (q) => q.x >= f.left - 4 && q.x <= f.right + 4 && q.y >= f.top - 4 && q.y <= f.bottom + 4;
+      const P = getAutoZoomOrigin();
+      const T = getActiveDip();
+      if (!inside(toScreen(P.lat, P.lon)) || !inside(toScreen(T.lat, T.lon))) {
+        zoomToActiveTrack(false);
+      }
+    }
+
+    let lastContainCheck = 0;
+    let containTimer = null;
+    function scheduleContainCheck() {
+      const now = performance.now();
+      if (now - lastContainCheck >= 250) {
+        lastContainCheck = now;
+        ensureAutoZoomContains();
+      }
+      clearTimeout(containTimer);
+      containTimer = setTimeout(ensureAutoZoomContains, 300);
+    }
+
+    function onViewportResized() {
+      setTimeout(() => {
+        if (document.getElementById("viewMap").classList.contains("active")) {
+          map.invalidateSize();
+          if (autoZoom) zoomToActiveTrack(false);
+        }
+      }, 200);
+    }
+    window.addEventListener("resize", onViewportResized);
+    window.addEventListener("orientationchange", onViewportResized);
+
+    document.getElementById("btnAutoZoom").addEventListener("click", (ev) => {
+      if (ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur();
+      setTimeout(resetShellScroll, 0);
+      setTimeout(resetShellScroll, 400);
+      const nextState = !autoZoom;
+      setAutoZoomState(nextState);
+      if (nextState) {
+        autoCenter = true;
+        document.getElementById("btnCenter").classList.add("on");
+        zoomToActiveTrack(true);
+      }
+    });
+
+    const jumperIcon = L.divIcon({
+      html: `<div id="jumperArrow" style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;">
+               <svg width="28" height="28" viewBox="0 0 24 24">
+                 <polygon points="12,2 21,21 12,16 3,21" fill="#38bdf8" stroke="#090e17" stroke-width="2"/>
+               </svg>
+             </div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15]
+    });
+    const harpIcon = L.divIcon({
+      html: `<div style="width:16px;height:16px;background:#22c55e;border:2px solid #090e17;transform:rotate(45deg);"></div>`,
+      iconSize: [16, 16],
+      iconAnchor: [8, 8]
+    });
+
+    const jumperMarker = L.marker([navState.harpLat, navState.harpLon], { icon: jumperIcon, zIndexOffset: 1000 }).addTo(map);
+    const harpMarker = L.marker([navState.harpLat, navState.harpLon], { icon: harpIcon }).addTo(map);
+
+    const dipMarkersLayer = L.layerGroup().addTo(map);
+
+    function createDipMarkerIcon(name, isActive) {
+      return L.divIcon({
+        html: `<div class="dip-pin-wrap" style="transform: rotate(${compassMode ? smoothedHeading : 0}deg);">
+                 <div class="${isActive ? "dip-pin-dot-active" : "dip-pin-dot-alt"}"></div>
+                 <div class="dip-pin-lbl ${isActive ? "active" : ""}">${name}</div>
+               </div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0]
+      });
+    }
+
+    // Un DIP e' mostrato sulla mappa se non e' stato nascosto; il DIP attivo (bersaglio di navigazione) e' sempre visibile.
+    function getDipBySlot(slot) {
+      return String(slot) === "main" ? navState.mainDip : navState.altDips[parseInt(slot, 10)];
+    }
+    function isDipShown(slot) {
+      if (String(navState.activeId) === String(slot)) return true;
+      const d = getDipBySlot(slot);
+      return !!d && d.visible !== false;
+    }
+
+    function renderAllDipMarkers() {
+      dipMarkersLayer.clearLayers();
+
+      const isMainActive = navState.activeId === "main";
+      if (isDipShown("main")) {
+        const mainM = L.marker([navState.mainDip.lat, navState.mainDip.lon], {
+          icon: createDipMarkerIcon(navState.mainDip.name, isMainActive),
+          zIndexOffset: isMainActive ? 900 : 500
+        }).addTo(dipMarkersLayer);
+
+        mainM.on("click", (e) => {
+          L.DomEvent.stopPropagation(e);
+          returnToDipTabWithSelection("main");
+        });
+      }
+
+      navState.altDips.forEach((alt, idx) => {
+        if (!isDipShown(idx)) return;
+        const isAltActive = navState.activeId === String(idx);
+        const m = L.marker([alt.lat, alt.lon], {
+          icon: createDipMarkerIcon(alt.name, isAltActive),
+          zIndexOffset: isAltActive ? 900 : 500
+        }).addTo(dipMarkersLayer);
+
+        m.on("click", (e) => {
+          L.DomEvent.stopPropagation(e);
+          returnToDipTabWithSelection(String(idx));
+        });
+      });
+    }
+
+    function returnToDipTabWithSelection(slot) {
+      setTapDipMode(null);
+      pendingSelectedSlot = String(slot);
+      renderTargetConfig();
+      switchTab("viewTargets");
+
+      const rowEl = document.getElementById(`row_${slot}`);
+      if (rowEl) {
+        rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      const targetObj = slot === "main" ? navState.mainDip : navState.altDips[parseInt(slot, 10)];
+      document.getElementById("cfgMsg").textContent = `SELEZIONATO ${targetObj.name}: PREMI ATTIVA`;
+    }
+
+    let tapAssignSlot = null;
+
+    function setTapDipMode(slotOrNull) {
+      tapAssignSlot = slotOrNull;
+      const btn = document.getElementById("btnTapDip");
+      const banner = document.getElementById("tapBanner");
+      if (tapAssignSlot !== null) {
+        btn.classList.add("pick-on");
+        banner.classList.add("visible");
+        banner.textContent = tapAssignSlot === "quick"
+          ? "TOCCA UN DIP ESISTENTE PER SELEZIONARLO, O UN PUNTO LIBERO PER AGGIUNGERE UN NUOVO DIP ALTERNATIVO"
+          : `TOCCA SULLA MAPPA PER POSIZIONARE ${tapAssignSlot === "main" ? navState.mainDip.name : navState.altDips[tapAssignSlot].name}`;
+      } else {
+        btn.classList.remove("pick-on");
+        banner.classList.remove("visible");
+      }
+    }
+
+    document.getElementById("btnTapDip").addEventListener("click", () => {
+      if (tapAssignSlot !== null) {
+        setTapDipMode(null);
+      } else {
+        setTapDipMode("quick");
+      }
+    });
+
+    window.pickSlotOnMap = function(slot) {
+      syncConfigFromInputs();
+      switchTab("viewMap");
+      setTimeout(() => {
+        setTapDipMode(String(slot));
+      }, 70);
+    };
+
+    map.on("click", async (e) => {
+      if (tapAssignSlot === null) return;
+
+      const lat = e.latlng.lat;
+      const lon = e.latlng.lng;
+      let targetSlot = tapAssignSlot;
+      if (tapAssignSlot === "quick") {
+        // TAP DIP su un punto libero: crea un nuovo DIP alternativo
+        navState.altDips.push({ name: `ALT ${navState.altDips.length + 1} MAPPA`, lat, lon, elevFt: 0, visible: true });
+        targetSlot = String(navState.altDips.length - 1);
+      }
+
+      const targetObj = getDipBySlot(targetSlot);
+      targetObj.lat = lat;
+      targetObj.lon = lon;
+      targetObj.visible = true; // un DIP appena posizionato resta visibile
+
+      localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+      renderAllDipMarkers();
+      returnToDipTabWithSelection(targetSlot);
+
+      document.getElementById("cfgMsg").textContent = `LETTURA QUOTA DEM PER ${targetObj.name}...`;
+      try {
+        const elev = await AeronavCore.fetchElevationFt(lat, lon);
+        targetObj.elevFt = elev;
+        localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+        renderTargetConfig();
+        const dispElev = navState.altUnit === "m" ? `${Math.round(elev * AeronavCore.FT_TO_M)} m` : `${elev} ft`;
+        document.getElementById("cfgMsg").textContent = `${targetObj.name} IMPOSTATO (${dispElev}): PREMI ATTIVA`;
+      } catch (err) {
+        document.getElementById("cfgMsg").textContent = `${targetObj.name} IMPOSTATO: PREMI ATTIVA`;
+      }
+    });
+
+    const idealLine = L.polyline([[navState.harpLat, navState.harpLon], [activeDip.lat, activeDip.lon]], {
+      color: "#22c55e",
+      weight: 4
+    }).addTo(map);
+
+    const directLine = L.polyline([], {
+      color: "#f59e0b",
+      weight: 3,
+      dashArray: "7, 7"
+    }).addTo(map);
+
+    const trailLine = L.polyline([], {
+      color: "#38bdf8",
+      weight: 2.5,
+      opacity: 0.75
+    }).addTo(map);
+
+    let compassMode = true;
+    let autoCenter = true;
+    let rawCompassHeading = null;
+    let compassHeading = null;
+    let smoothedHeading = 0;
+
+    // Stato procedura calibrazione a 8
+    let cal8Active = false;
+    let cal8Timer = null;
+    let cal8Samples = [];
+
+    function applyCompassOffset(rawDeg) {
+      const off = Number(navState.compassOffsetDeg) || 0;
+      return (rawDeg + off + 720) % 360;
+    }
+
+    function updateMapRotation() {
+      const rotator = document.getElementById("mapRotator");
+      const arrow = document.getElementById("jumperArrow");
+      const rotDeg = compassMode ? smoothedHeading : 0;
+      if (compassMode) {
+        rotator.style.transform = `translate(-50%, -50%) rotate(${-smoothedHeading}deg)`;
+        if (arrow) arrow.style.transform = `rotate(${smoothedHeading}deg)`;
+      } else {
+        rotator.style.transform = `translate(-50%, -50%) rotate(0deg)`;
+        if (arrow) arrow.style.transform = `rotate(${smoothedHeading}deg)`;
+      }
+      document.querySelectorAll(".dip-pin-wrap, .team-pin-wrap").forEach(el => {
+        el.style.transform = `rotate(${rotDeg}deg)`;
+      });
+      if (navReady && autoZoom && compassMode) scheduleContainCheck();
+      if (typeof teamFitTick === "function") teamFitTick();
+    }
+
+    function updateCalDialUI() {
+      const rose = document.getElementById("calCompassRose");
+      const liveDegEl = document.getElementById("calLiveDeg");
+      const rawSubEl = document.getElementById("calRawSub");
+      const off = Math.round(Number(navState.compassOffsetDeg) || 0);
+      if (!rose || !liveDegEl || !rawSubEl) return;
+
+      const shownHdg = Math.round(smoothedHeading) % 360;
+      rose.style.transform = `rotate(${-shownHdg}deg)`;
+      liveDegEl.textContent = `${String(shownHdg).padStart(3, "0")}°`;
+      const rawTxt = rawCompassHeading !== null ? `${String(Math.round(rawCompassHeading)).padStart(3, "0")}°` : "---°";
+      rawSubEl.textContent = `RAW: ${rawTxt} | OFF: ${off >= 0 ? "+" + off : off}°`;
+    }
+
+    function handleDeviceOrientation(e) {
+      let hdg = null;
+      if (typeof e.webkitCompassHeading === "number") {
+        hdg = e.webkitCompassHeading;
+      } else if (e.alpha !== null) {
+        hdg = (360 - e.alpha) % 360;
+      }
+      if (hdg !== null && Number.isFinite(hdg)) {
+        rawCompassHeading = (hdg + 360) % 360;
+        if (cal8Active) {
+          cal8Samples.push(rawCompassHeading);
+        }
+        compassHeading = applyCompassOffset(rawCompassHeading);
+        const diff = ((compassHeading - smoothedHeading + 540) % 360) - 180;
+        smoothedHeading = (smoothedHeading + diff * 0.25 + 360) % 360;
+        updateMapRotation();
+        updateCalDialUI();
+        document.getElementById("valHeading").textContent = `${String(Math.round(smoothedHeading)).padStart(3, "0")}°`;
+      }
+    }
+
+    function startCompass() {
+      if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
+        DeviceOrientationEvent.requestPermission().then(res => {
+          if (res === "granted") {
+            window.addEventListener("deviceorientation", handleDeviceOrientation, true);
+          }
+        }).catch(() => {});
+      } else {
+        window.addEventListener("deviceorientationabsolute", handleDeviceOrientation, true);
+        window.addEventListener("deviceorientation", handleDeviceOrientation, true);
+      }
+    }
+    startCompass();
+
+    document.getElementById("btnStartCal8").addEventListener("click", () => {
+      startCompass();
+      if (cal8Active) return;
+      cal8Active = true;
+      cal8Samples = [];
+      const btn = document.getElementById("btnStartCal8");
+      const badge = document.getElementById("calStatusBadge");
+      const guide = document.getElementById("calGuideText");
+      const fill = document.getElementById("calProgressFill");
+
+      btn.textContent = "CALIBRAZIONE IN CORSO...";
+      badge.textContent = "ROTAZIONE 8";
+      badge.style.color = "var(--amber)";
+      guide.textContent = "Muovi il telefono disegnando un 8 ampio nell'aria (beccheggio, rollio e imbardata)...";
+
+      const durationMs = 10000;
+      const startMs = Date.now();
+      cal8Timer = setInterval(() => {
+        const elapsed = Date.now() - startMs;
+        const pct = Math.min(100, (elapsed / durationMs) * 100);
+        fill.style.width = pct + "%";
+
+        if (elapsed >= durationMs) {
+          clearInterval(cal8Timer);
+          cal8Active = false;
+          btn.textContent = "AVVIA CALIBRAZIONE 8";
+          if (cal8Samples.length >= 15) {
+            badge.textContent = "CALIBRATA";
+            badge.style.color = "var(--accent)";
+            guide.textContent = `Calibrazione completata (${cal8Samples.length} campioni magnetometro acquisiti). Puoi rifinire l'offset manuale qui sotto.`;
+          } else {
+            badge.textContent = "SENSORE ASSENTE";
+            badge.style.color = "var(--danger)";
+            guide.textContent = "Nessun dato dal magnetometro rilevato. Verifica i permessi sensori o usa l'offset manuale / GPS.";
+          }
+        }
+      }, 150);
+    });
+
+    document.getElementById("btnAlignDipHdg").addEventListener("click", () => {
+      const target = getActiveDip();
+      const originLat = currentTelemetry.lat || navState.harpLat;
+      const originLon = currentTelemetry.lon || navState.harpLon;
+      const trueBrgToDip = AeronavCore.bearingDegrees(originLat, originLon, target.lat, target.lon);
+      const baseHdg = rawCompassHeading !== null ? rawCompassHeading : smoothedHeading;
+      let newOffset = Math.round(((trueBrgToDip - baseHdg + 540) % 360) - 180);
+      navState.compassOffsetDeg = newOffset;
+      localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+      if (rawCompassHeading !== null) {
+        compassHeading = applyCompassOffset(rawCompassHeading);
+        smoothedHeading = compassHeading;
+      } else {
+        smoothedHeading = trueBrgToDip;
+      }
+      updateMapRotation();
+      renderSettingsUI();
+      document.getElementById("calStatusBadge").textContent = "ALLINEATA AL DIP";
+      document.getElementById("calGuideText").textContent = `Prua allineata al rilevamento DIP (${String(Math.round(trueBrgToDip)).padStart(3, "0")}°). Offset salvato: ${newOffset >= 0 ? "+" + newOffset : newOffset}°.`;
+    });
+
+    window.adjustCompassOffset = function(delta) {
+      let next = (Number(navState.compassOffsetDeg) || 0) + delta;
+      if (next > 180) next -= 360;
+      if (next < -180) next += 360;
+      navState.compassOffsetDeg = next;
+      localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+      if (rawCompassHeading !== null) {
+        compassHeading = applyCompassOffset(rawCompassHeading);
+        smoothedHeading = compassHeading;
+        updateMapRotation();
+      }
+      renderSettingsUI();
+    };
+
+    window.resetCompassOffset = function() {
+      navState.compassOffsetDeg = 0;
+      localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+      if (rawCompassHeading !== null) {
+        compassHeading = rawCompassHeading;
+        smoothedHeading = compassHeading;
+        updateMapRotation();
+      }
+      renderSettingsUI();
+    };
+
+    document.getElementById("cfgCompassOffset").addEventListener("change", (e) => {
+      let val = parseFloat(e.target.value) || 0;
+      val = Math.max(-180, Math.min(180, Math.round(val)));
+      navState.compassOffsetDeg = val;
+      localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+      if (rawCompassHeading !== null) {
+        compassHeading = applyCompassOffset(rawCompassHeading);
+        smoothedHeading = compassHeading;
+        updateMapRotation();
+      }
+      renderSettingsUI();
+    });
+
+    function setUnitPreference(type, val) {
+      if (type === "alt" && (val === "ft" || val === "m")) {
+        navState.altUnit = val;
+      } else if (type === "spd" && (val === "kt" || val === "ms")) {
+        navState.spdUnit = val;
+      }
+      localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+      renderSettingsUI();
+      renderTargetConfig();
+      refreshTelemetryDisplay();
+    }
+
+    document.querySelectorAll("[data-map-type]").forEach(btn => {
+      btn.addEventListener("click", () => setMapType(btn.dataset.mapType));
+    });
+    document.querySelectorAll("[data-alt-unit]").forEach(btn => {
+      btn.addEventListener("click", () => setUnitPreference("alt", btn.dataset.altUnit));
+    });
+    document.querySelectorAll("[data-spd-unit]").forEach(btn => {
+      btn.addEventListener("click", () => setUnitPreference("spd", btn.dataset.spdUnit));
+    });
+
+    function renderSettingsUI() {
+      document.getElementById("cfgCompassOffset").value = Math.round(Number(navState.compassOffsetDeg) || 0);
+      updateCalDialUI();
+
+      document.getElementById("optMapOsm").classList.toggle("active", mapType === "osm");
+      document.getElementById("optMapSat").classList.toggle("active", mapType === "sat");
+      document.getElementById("optAltFt").classList.toggle("active", navState.altUnit === "ft");
+      document.getElementById("optAltM").classList.toggle("active", navState.altUnit === "m");
+      document.getElementById("optSpdKt").classList.toggle("active", navState.spdUnit === "kt");
+      document.getElementById("optSpdMs").classList.toggle("active", navState.spdUnit === "ms");
+
+      const altLbl = navState.altUnit === "m" ? "metri (m)" : "piedi (ft)";
+      const spdLbl = navState.spdUnit === "ms" ? "metri al secondo (m/s)" : "nodi (knots)";
+      document.getElementById("unitSummaryNote").innerHTML =
+        `Configurazione attiva: quote/distanze in <strong style="color:var(--text);">${altLbl}</strong>, velocità in <strong style="color:var(--text);">${spdLbl}</strong>. Sincronizzata automaticamente anche con il Planner HAHO.`;
+    }
+
+    document.getElementById("btnCompass").addEventListener("click", () => {
+      startCompass();
+      compassMode = !compassMode;
+      const btn = document.getElementById("btnCompass");
+      btn.textContent = compassMode ? "HDG UP" : "NORTH UP";
+      btn.classList.toggle("on", compassMode);
+      updateMapRotation();
+    });
+
+    document.getElementById("btnCenter").addEventListener("click", () => {
+      autoCenter = !autoCenter;
+      document.getElementById("btnCenter").classList.toggle("on", autoCenter);
+      if (autoCenter && currentTelemetry.lat) {
+        if (autoZoom) zoomToActiveTrack(false);
+        else centerMapOnPosition(currentTelemetry.lat, currentTelemetry.lon);
+      }
+    });
+
+    let currentTelemetry = {
+      lat: null,
+      lon: null,
+      altFt: null,
+      speedKt: 0,
+      gpsHeading: null,
+      rawAltM: null,
+      speedMs: 0
+    };
+    const altHistory = [];
+    const trailCoords = [];
+
+    function formatGlideRatio(val) {
+      if (val === null || !Number.isFinite(val) || val <= 0) return "---";
+      if (val > 99.9) return "99.9:1";
+      return `${val.toFixed(1)}:1`;
+    }
+
+    function refreshTelemetryDisplay() {
+      if (currentTelemetry.lat === null) {
+        const useMeters = navState.altUnit === "m";
+        const useMs = navState.spdUnit === "ms";
+        document.getElementById("subAltMsl").textContent = useMeters ? "QUOTA: -- m MSL" : "QUOTA: -- ft MSL";
+        document.getElementById("valDist").textContent = useMeters ? "-- m" : "-- km";
+        document.getElementById("valSpeed").textContent = useMs ? "0.0 m/s" : "0.0 kt";
+        document.getElementById("subSpeedAlt").textContent = useMs ? "0.0 kt" : "0.0 m/s";
+        return;
+      }
+      updateTelemetry(
+        currentTelemetry.lat,
+        currentTelemetry.lon,
+        currentTelemetry.rawAltM,
+        currentTelemetry.speedMs,
+        currentTelemetry.gpsHeading,
+        true
+      );
+    }
+
+    function updateTelemetry(lat, lon, rawAltM, speedMs, gpsHdg, isRefreshOnly = false) {
+      const nowMs = Date.now();
+      const altFt = (typeof rawAltM === "number" && Number.isFinite(rawAltM))
+        ? rawAltM * AeronavCore.M_TO_FT + navState.altOffsetFt
+        : (currentTelemetry.altFt || 10000);
+
+      const speedKt = (typeof speedMs === "number" && Number.isFinite(speedMs) && speedMs >= 0)
+        ? speedMs * AeronavCore.MS_TO_KT
+        : 0;
+
+      currentTelemetry = { lat, lon, altFt, speedKt, gpsHeading: gpsHdg, rawAltM, speedMs };
+
+      let activeHdg = smoothedHeading;
+      let hdgSource = "BUSSOLA";
+      if (compassHeading === null && typeof gpsHdg === "number" && Number.isFinite(gpsHdg)) {
+        activeHdg = applyCompassOffset(gpsHdg);
+        smoothedHeading = activeHdg;
+        hdgSource = "GPS";
+        updateMapRotation();
+      }
+
+      if (!isRefreshOnly) {
+        altHistory.push({ t: nowMs, altFt });
+        while (altHistory.length > 2 && (nowMs - altHistory[0].t) > 4500) {
+          altHistory.shift();
+        }
+      }
+
+      let vsRealFpm = 0;
+      if (altHistory.length >= 2) {
+        const dtMin = (altHistory[altHistory.length - 1].t - altHistory[0].t) / 60000;
+        if (dtMin > 0.015) {
+          vsRealFpm = (altHistory[altHistory.length - 1].altFt - altHistory[0].altFt) / dtMin;
+        }
+      }
+
+      const target = getActiveDip();
+      const distM = AeronavCore.distanceMeters(lat, lon, target.lat, target.lon);
+      const distKm = distM / 1000;
+      const brgToDip = AeronavCore.bearingDegrees(lat, lon, target.lat, target.lon);
+
+      const groundSpeedMs = speedKt * AeronavCore.KT_TO_MS;
+      const speedMpm = groundSpeedMs * 60;
+      const altToLoseFt = altFt - target.elevFt;
+      const altToLoseM = altToLoseFt * AeronavCore.FT_TO_M;
+
+      const sinkRateFpm = -vsRealFpm;
+      let realGlideRatio = null;
+      if (sinkRateFpm > 30 && speedKt > 1.5) {
+        const horizFpm = (groundSpeedMs * AeronavCore.M_TO_FT) * 60;
+        realGlideRatio = horizFpm / sinkRateFpm;
+      }
+
+      let reqGlideRatio = null;
+      if (altToLoseM > 3 && distM > 5) {
+        reqGlideRatio = distM / altToLoseM;
+      }
+
+      let eteStr = "--:--";
+      if (speedMpm > 15 && distM > 5) {
+        const eteMin = distM / speedMpm;
+        const totSec = Math.round(eteMin * 60);
+        const mm = Math.floor(totSec / 60);
+        const ss = totSec % 60;
+        eteStr = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+      }
+
+      const useMeters = navState.altUnit === "m";
+      const useMs = navState.spdUnit === "ms";
+
+      document.getElementById("hudPosMgrs").textContent = AeronavCore.latLonToMgrs(lat, lon, 5);
+      document.getElementById("hudTargetName").textContent = target.name;
+      document.getElementById("hudDipMgrs").textContent = AeronavCore.latLonToMgrs(target.lat, target.lon, 5);
+
+      document.getElementById("valGlideReal").textContent = formatGlideRatio(realGlideRatio);
+      if (useMeters) {
+        const mslM = Math.round(altFt * AeronavCore.FT_TO_M);
+        const aglM = Math.round(altToLoseM);
+        document.getElementById("subAltMsl").textContent = `QUOTA: ${mslM} m (AGL: ${aglM} m)`;
+      } else {
+        document.getElementById("subAltMsl").textContent = `QUOTA: ${Math.round(altFt)} ft (AGL: ${Math.round(altToLoseFt)} ft)`;
+      }
+
+      const cardGlide = document.getElementById("cardGlideDest");
+      cardGlide.classList.remove("status-ok", "status-high", "status-low");
+      document.getElementById("valGlideDest").textContent = formatGlideRatio(reqGlideRatio);
+
+      if (altToLoseFt <= 0) {
+        cardGlide.classList.add("status-low");
+        document.getElementById("subGlideStatus").textContent = "SOTTO QUOTA DIP";
+      } else if (realGlideRatio !== null && reqGlideRatio !== null) {
+        const margin = realGlideRatio - reqGlideRatio;
+        if (margin >= reqGlideRatio * 0.25) {
+          cardGlide.classList.add("status-high");
+          document.getElementById("subGlideStatus").textContent = `MARGINE +${margin.toFixed(1)}:1`;
+        } else if (margin >= -0.2) {
+          cardGlide.classList.add("status-ok");
+          document.getElementById("subGlideStatus").textContent = "IN SENTIERO IDEALE";
+        } else {
+          cardGlide.classList.add("status-low");
+          document.getElementById("subGlideStatus").textContent = `DEFICIT ${margin.toFixed(1)}:1`;
+        }
+      } else if (reqGlideRatio !== null) {
+        document.getElementById("subGlideStatus").textContent = `RICHIESTA ${reqGlideRatio.toFixed(1)}:1`;
+      } else {
+        document.getElementById("subGlideStatus").textContent = "IN ATTESA DATI";
+      }
+
+      if (useMeters) {
+        document.getElementById("valDist").textContent = distM >= 1000
+          ? `${(distM / 1000).toFixed(2)} km`
+          : `${Math.round(distM)} m`;
+      } else {
+        document.getElementById("valDist").textContent = distKm >= 1
+          ? `${distKm.toFixed(2)} km`
+          : `${Math.round(distM)} m`;
+      }
+      document.getElementById("subEte").textContent = `ETE: ${eteStr}`;
+
+      if (useMs) {
+        document.getElementById("valSpeed").textContent = `${groundSpeedMs.toFixed(1)} m/s`;
+        document.getElementById("subSpeedAlt").textContent = `${speedKt.toFixed(1)} kt`;
+      } else {
+        document.getElementById("valSpeed").textContent = `${speedKt.toFixed(1)} kt`;
+        document.getElementById("subSpeedAlt").textContent = `${groundSpeedMs.toFixed(1)} m/s`;
+      }
+
+      document.getElementById("valHeading").textContent = `${String(Math.round(activeHdg)).padStart(3, "0")}°`;
+      document.getElementById("subBrgDip").textContent = `DIP: ${String(Math.round(brgToDip)).padStart(3, "0")}° (${hdgSource})`;
+
+      jumperMarker.setLatLng([lat, lon]);
+      directLine.setLatLngs([[lat, lon], [target.lat, target.lon]]);
+      if (!isRefreshOnly) {
+        trailCoords.push([lat, lon]);
+        if (trailCoords.length > 300) trailCoords.shift();
+        trailLine.setLatLngs(trailCoords);
+      }
+
+      if (autoZoom) {
+        zoomToActiveTrack(false);
+      } else if (autoCenter) {
+        centerMapOnPosition(lat, lon);
+      } else if (typeof teamFitTick === "function") {
+        teamFitTick();
+      }
+    }
+
+    let lastGpsFix = null; // { ts, acc } dell'ultimo fix GPS reale (usato dal Team Live)
+    function startRealGps() {
+      if (!("geolocation" in navigator)) return;
+      navigator.geolocation.watchPosition(
+        (pos) => {
+          if (simTimer) return;
+          const c = pos.coords;
+          lastGpsFix = { ts: pos.timestamp, acc: c.accuracy };
+          updateTelemetry(c.latitude, c.longitude, c.altitude, c.speed, c.heading);
+        },
+        () => {
+          document.getElementById("hudPosMgrs").textContent = "GPS NON DISPONIBILE (USA SIM)";
+        },
+        { enableHighAccuracy: true, maximumAge: 500, timeout: 10000 }
+      );
+    }
+    startRealGps();
+
+    let simTimer = null;
+    let simProgress = 0;
+    document.getElementById("btnSim").addEventListener("click", () => {
+      const btn = document.getElementById("btnSim");
+      if (simTimer) {
+        clearInterval(simTimer);
+        simTimer = null;
+        btn.classList.remove("sim-on");
+        return;
+      }
+      btn.classList.add("sim-on");
+      simProgress = 0;
+      altHistory.length = 0;
+      trailCoords.length = 0;
+
+      simTimer = setInterval(() => {
+        const target = getActiveDip();
+        const totalDist = AeronavCore.distanceMeters(navState.harpLat, navState.harpLon, target.lat, target.lon);
+        const brg = AeronavCore.bearingDegrees(navState.harpLat, navState.harpLon, target.lat, target.lon);
+        const simSpeedKt = 28;
+        const stepDist = simSpeedKt * AeronavCore.KT_TO_MS * 0.5;
+        simProgress += stepDist;
+
+        const ratio = Math.min(1, simProgress / Math.max(100, totalDist));
+        const pos = AeronavCore.destinationPoint(navState.harpLat, navState.harpLon, brg, simProgress);
+        const simAltFt = 14000 * (1 - ratio) + (target.elevFt + 800) * ratio;
+        const simAltM = (simAltFt - navState.altOffsetFt) * AeronavCore.FT_TO_M;
+
+        if (compassHeading === null) {
+          smoothedHeading = applyCompassOffset(brg);
+          updateMapRotation();
+        }
+        updateTelemetry(pos.lat, pos.lon, simAltM, simSpeedKt * AeronavCore.KT_TO_MS, brg);
+
+        if (ratio >= 1) simProgress = 0;
+      }, 500);
+    });
+
+    function toDisplayAlt(altFt) {
+      return navState.altUnit === "m"
+        ? Math.round(altFt * AeronavCore.FT_TO_M)
+        : Math.round(altFt);
+    }
+
+    function fromDisplayAlt(dispVal) {
+      const num = parseFloat(dispVal) || 0;
+      return navState.altUnit === "m"
+        ? (num * AeronavCore.M_TO_FT)
+        : num;
+    }
+
+    function renderTargetConfig() {
+      const uTxt = navState.altUnit === "m" ? "m" : "ft";
+      document.querySelectorAll(".unit-alt-txt").forEach(el => el.textContent = uTxt);
+
+      document.getElementById("cfgHarpMgrs").value = AeronavCore.latLonToMgrs(navState.harpLat, navState.harpLon, 5);
+      document.getElementById("cfgAltOffset").value = toDisplayAlt(navState.altOffsetFt);
+      document.getElementById("mainDipName").value = navState.mainDip.name;
+      document.getElementById("mainDipMgrs").value = AeronavCore.latLonToMgrs(navState.mainDip.lat, navState.mainDip.lon, 5);
+      document.getElementById("mainDipElev").value = toDisplayAlt(navState.mainDip.elevFt);
+
+      document.getElementById("tabTargets").textContent = `DIP / ALT (${navState.altDips.length})`;
+      document.getElementById("altDipsTitle").textContent = `DIP ALTERNATIVI DI EMERGENZA (${navState.altDips.length})`;
+
+      const mainRow = document.getElementById("row_main");
+      mainRow.classList.remove("selected-row", "active-nav-row");
+      if (pendingSelectedSlot === "main") mainRow.classList.add("selected-row");
+      else if (navState.activeId === "main") mainRow.classList.add("active-nav-row");
+
+      const cont = document.getElementById("altDipsContainer");
+      cont.innerHTML = "";
+      if (!navState.altDips.length) {
+        cont.innerHTML = `<div class="alt-empty">Nessun DIP alternativo. Usa "+ AGGIUNGI DIP ALTERNATIVO" oppure TAP DIP sulla mappa.</div>`;
+      }
+      navState.altDips.forEach((alt, idx) => {
+        const slotStr = String(idx);
+        const row = document.createElement("div");
+        row.id = `row_${idx}`;
+        row.className = "alt-row";
+        if (pendingSelectedSlot === slotStr) row.classList.add("selected-row");
+        else if (navState.activeId === slotStr) row.classList.add("active-nav-row");
+
+        row.innerHTML = `
+          <div>
+            <label>Alt ${idx + 1} Nome</label>
+            <input type="text" id="altName_${idx}" value="${alt.name}" />
+          </div>
+          <div>
+            <label>Coordinate MGRS</label>
+            <input type="text" id="altMgrs_${idx}" value="${AeronavCore.latLonToMgrs(alt.lat, alt.lon, 5)}" />
+          </div>
+          <div>
+            <label>Quota (${uTxt})</label>
+            <input type="number" id="altElev_${idx}" value="${toDisplayAlt(alt.elevFt)}" />
+          </div>
+          <div class="alt-actions" style="display:flex; gap:4px; flex-wrap:wrap;">
+            <button class="btn-vis" id="visBtn_${idx}" onclick="toggleDipVisible(${idx})">● VISIBILE</button>
+            <button class="btn-map-set" onclick="pickSlotOnMap(${idx})" title="Posiziona con tap su mappa">MAPPA</button>
+            <button class="btn-dem" onclick="fetchRowDem(${idx})">DEM</button>
+            <button class="btn-act" onclick="activateTarget(${idx})">ATTIVA</button>
+            <button class="btn-del" id="delBtn_${idx}" onclick="removeAltDip(${idx})" title="Elimina questo DIP">✕</button>
+          </div>
+        `;
+        cont.appendChild(row);
+        const delBtn = row.querySelector(`#delBtn_${idx}`);
+        if (navState.activeId === slotStr) {
+          delBtn.disabled = true;
+          delBtn.title = "Il DIP attivo non si puo' eliminare: attiva prima un altro DIP";
+        }
+      });
+
+      applyVisBtn("main");
+      navState.altDips.forEach((_, idx) => applyVisBtn(idx));
+    }
+
+    // Aggiorna etichetta/stato del pulsante di visibilita' di un DIP
+    function applyVisBtn(slot) {
+      const el = document.getElementById(`visBtn_${slot}`);
+      if (!el) return;
+      const isActive = String(navState.activeId) === String(slot);
+      const shown = isDipShown(slot);
+      el.classList.toggle("off", !shown);
+      el.textContent = shown ? "● VISIBILE" : "○ NASCOSTO";
+      el.disabled = isActive;
+      el.title = isActive
+        ? "Il DIP attivo e' sempre visibile sulla mappa"
+        : "Mostra / nascondi questo DIP sulla mappa del navigatore";
+      const row = document.getElementById(`row_${slot}`);
+      if (row) row.classList.toggle("dip-hidden", !shown);
+    }
+
+    window.toggleDipVisible = function(slot) {
+      syncConfigFromInputs();
+      const d = getDipBySlot(slot);
+      if (!d) return;
+      d.visible = d.visible === false; // inverte: nascosto -> visibile, visibile -> nascosto
+      localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+      renderAllDipMarkers();
+      applyVisBtn(slot);
+      document.getElementById("cfgMsg").textContent = `${d.name}: ${d.visible === false ? "NASCOSTO DALLA MAPPA" : "VISIBILE SULLA MAPPA"}`;
+    };
+
+    window.addAltDip = async function() {
+      syncConfigFromInputs();
+      const c = map.getCenter();
+      const idx = navState.altDips.length;
+      const dip = { name: `ALT ${idx + 1}`, lat: c.lat, lon: c.lng, elevFt: navState.mainDip.elevFt, visible: true };
+      navState.altDips.push(dip);
+      localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+      pendingSelectedSlot = String(idx);
+      renderTargetConfig();
+      renderAllDipMarkers();
+      const rowEl = document.getElementById(`row_${idx}`);
+      if (rowEl) rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      document.getElementById("cfgMsg").textContent = `${dip.name} AGGIUNTO: INSERISCI MGRS O USA MAPPA`;
+      try {
+        const elev = await AeronavCore.fetchElevationFt(dip.lat, dip.lon);
+        if (navState.altDips[idx] === dip) {
+          dip.elevFt = elev;
+          localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+          const el = document.getElementById(`altElev_${idx}`);
+          if (el) el.value = toDisplayAlt(elev);
+        }
+      } catch (err) {}
+    };
+
+    window.removeAltDip = function(idx) {
+      syncConfigFromInputs();
+      const d = navState.altDips[idx];
+      if (!d) return;
+      if (navState.activeId === String(idx)) {
+        document.getElementById("cfgMsg").textContent = "IL DIP ATTIVO NON SI PUO' ELIMINARE: ATTIVA PRIMA UN ALTRO DIP";
+        return;
+      }
+      if (!confirm(`Eliminare ${d.name}?`)) return;
+      navState.altDips.splice(idx, 1);
+      // gli indici successivi scorrono di una posizione
+      if (navState.activeId !== "main") {
+        const a = parseInt(navState.activeId, 10);
+        if (a > idx) navState.activeId = String(a - 1);
+      }
+      if (pendingSelectedSlot !== null && pendingSelectedSlot !== "main") {
+        const p = parseInt(pendingSelectedSlot, 10);
+        if (p === idx) pendingSelectedSlot = null;
+        else if (p > idx) pendingSelectedSlot = String(p - 1);
+      }
+      setTapDipMode(null);
+      localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+      renderTargetConfig();
+      renderAllDipMarkers();
+      document.getElementById("cfgMsg").textContent = `${d.name} ELIMINATO`;
+    };
+
+    function syncConfigFromInputs() {
+      try {
+        const h = AeronavCore.mgrsToLatLon(document.getElementById("cfgHarpMgrs").value);
+        navState.harpLat = h.lat;
+        navState.harpLon = h.lon;
+      } catch (e) {}
+
+      navState.altOffsetFt = fromDisplayAlt(document.getElementById("cfgAltOffset").value);
+
+      try {
+        const m = AeronavCore.mgrsToLatLon(document.getElementById("mainDipMgrs").value);
+        navState.mainDip.lat = m.lat;
+        navState.mainDip.lon = m.lon;
+      } catch (e) {}
+      navState.mainDip.name = document.getElementById("mainDipName").value || "DIP PRIMARIO";
+      navState.mainDip.elevFt = fromDisplayAlt(document.getElementById("mainDipElev").value);
+
+      navState.altDips.forEach((alt, idx) => {
+        const nameEl = document.getElementById(`altName_${idx}`);
+        const mgrsEl = document.getElementById(`altMgrs_${idx}`);
+        const elevEl = document.getElementById(`altElev_${idx}`);
+        if (nameEl) alt.name = nameEl.value || `ALT ${idx + 1}`;
+        if (elevEl) alt.elevFt = fromDisplayAlt(elevEl.value);
+        if (mgrsEl) {
+          try {
+            const c = AeronavCore.mgrsToLatLon(mgrsEl.value);
+            alt.lat = c.lat;
+            alt.lon = c.lon;
+          } catch (e) {}
+        }
+      });
+
+      localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+      renderAllDipMarkers();
+    }
+
+    window.fetchRowDem = async function(slot) {
+      syncConfigFromInputs();
+      const target = slot === "main" ? navState.mainDip : navState.altDips[slot];
+      document.getElementById("cfgMsg").textContent = "Lettura DEM Open-Meteo...";
+      try {
+        const elev = await AeronavCore.fetchElevationFt(target.lat, target.lon);
+        target.elevFt = elev;
+        const dispVal = toDisplayAlt(elev);
+        const uTxt = navState.altUnit === "m" ? "m" : "ft";
+        if (slot === "main") document.getElementById("mainDipElev").value = dispVal;
+        else document.getElementById(`altElev_${slot}`).value = dispVal;
+        localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+        document.getElementById("cfgMsg").textContent = `Quota DEM aggiornata: ${dispVal} ${uTxt}`;
+      } catch (err) {
+        document.getElementById("cfgMsg").textContent = "Errore DEM Open-Meteo";
+      }
+    };
+
+    window.activateTarget = function(slot) {
+      syncConfigFromInputs();
+      pendingSelectedSlot = null;
+      navState.activeId = String(slot);
+      localStorage.setItem(NAV_KEY, JSON.stringify(navState));
+      renderTargetConfig();
+      setAutoZoomState(true);
+
+      switchTab("viewMap");
+
+      setTimeout(() => {
+        map.invalidateSize();
+        const target = getActiveDip();
+        const originLat = currentTelemetry.lat || navState.harpLat;
+        const originLon = currentTelemetry.lon || navState.harpLon;
+
+        harpMarker.setLatLng([navState.harpLat, navState.harpLon]);
+        renderAllDipMarkers();
+        idealLine.setLatLngs([[navState.harpLat, navState.harpLon], [target.lat, target.lon]]);
+        directLine.setLatLngs([[originLat, originLon], [target.lat, target.lon]]);
+
+        const simOrLastAltM = ((currentTelemetry.altFt || 14000) - navState.altOffsetFt) * AeronavCore.FT_TO_M;
+        const simOrLastSpdMs = (currentTelemetry.speedKt || 0) * AeronavCore.KT_TO_MS;
+        updateTelemetry(originLat, originLon, simOrLastAltM, simOrLastSpdMs, currentTelemetry.gpsHeading);
+
+        zoomToActiveTrack(true);
+      }, 90);
+    };
+
+    renderTargetConfig();
+    renderSettingsUI();
+    renderAllDipMarkers();
+    refreshTelemetryDisplay();
+    document.getElementById("hudTargetName").textContent = activeDip.name;
+    document.getElementById("hudDipMgrs").textContent = AeronavCore.latLonToMgrs(activeDip.lat, activeDip.lon, 5);
+    navReady = true;
+    zoomToActiveTrack(false);
+
+    let deferredPrompt = null;
+    AeronavCore.initPwaAutoUpdate((e) => {
+      deferredPrompt = e;
+      document.getElementById("btnInstall").style.display = "inline-block";
+      syncTopbarHeight();
+    });
+    document.getElementById("btnInstall").addEventListener("click", async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      document.getElementById("btnInstall").style.display = "none";
+      syncTopbarHeight();
+    });
+  </script>
+
+  <!-- ======================= TEAM LIVE: logica scheda e marker ======================= -->
+  <script>
+  (function () {
+    "use strict";
+    const SERVER_KEY = "aeronav_haho_team_server_v1";
+    const NICK_RE = /^[\p{L}\p{N}_ .\-]{2,16}$/u;
+    const $ = (id) => document.getElementById(id);
+
+    let roster = [];        // tutti i membri del gruppo (ultimo sync)
+    let online = null;      // null = nessun sync ancora, true/false
+    let failCount = 0;
+    let busy = false;
+    const markers = new Map(); // id membro -> { mk, wrap, lbl }
+    let teamFit = false;       // modalita' INQUADRA TEAM attiva
+    let fitList = [];          // membri con posizione recente (esclusa la tua)
+    let lastFit = 0;
+
+    // ---------- helper ----------
+    function savedServer() { try { return localStorage.getItem(SERVER_KEY) || ""; } catch (e) { return ""; } }
+    function normServer(v) {
+      const s = String(v || "").trim().replace(/\/+$/, "");
+      return /^https?:\/\/[^\s\/]+/i.test(s) ? s : null;
+    }
+    function hostOf(url) { try { return new URL(url).host; } catch (e) { return url; } }
+    function memberColor(id) { return "hsl(" + (parseInt(String(id).slice(0, 4), 16) % 360) + ",75%,55%)"; }
+    function fmtAlt(m) {
+      return navState.altUnit === "m" ? Math.round(m) + " m" : Math.round(m * AeronavCore.M_TO_FT) + " ft";
+    }
+    function fmtSpeed(ms) {
+      return navState.spdUnit === "ms" ? ms.toFixed(1) + " m/s" : Math.round(ms * AeronavCore.MS_TO_KT) + " kt";
+    }
+    function fmtDist(m) { return m >= 1000 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m"; }
+    function fmtBrg(b) { return String(Math.round(b) % 360).padStart(3, "0") + "°"; }
+    function fmtAge(s) { return s < 90 ? Math.round(s) + " s" : Math.round(s / 60) + " min"; }
+
+    function showMsg(text, ok) {
+      const el = $("teamMsg");
+      el.textContent = text || "";
+      el.classList.toggle("show", !!text);
+      el.classList.toggle("ok", !!ok);
+    }
+    function errText(e) {
+      if (e && e.status) return e.message;
+      return "Server non raggiungibile: controlla l'indirizzo e la connessione dati.";
+    }
+    function setBusy(b) {
+      busy = b;
+      ["btnTeamCreate", "btnTeamJoin", "btnTeamInvite", "btnTeamLeave"].forEach((id) => { $(id).disabled = b; });
+    }
+
+    // ---------- posizione da inviare (dal GPS gia' usato dal navigatore) ----------
+    function verticalSpeedMs() {
+      if (altHistory.length < 2) return null;
+      const a = altHistory[0], b = altHistory[altHistory.length - 1];
+      const dt = (b.t - a.t) / 1000;
+      return dt >= 1 ? (b.altFt - a.altFt) * AeronavCore.FT_TO_M / dt : null;
+    }
+    function getFix() {
+      if (simTimer) return null; // mai inviare posizioni simulate al team
+      const t = currentTelemetry;
+      if (!lastGpsFix || !Number.isFinite(t.lat) || !Number.isFinite(t.lon)) return null;
+      const f = { lat: t.lat, lon: t.lon, ts: lastGpsFix.ts, acc: lastGpsFix.acc };
+      if (Number.isFinite(t.rawAltM)) {
+        f.alt = t.altFt * AeronavCore.FT_TO_M; // MSL con la tua calibrazione quota
+        const vs = verticalSpeedMs();
+        if (vs !== null) f.vs = vs;
+      }
+      if (Number.isFinite(t.speedMs)) f.gs = t.speedMs;
+      const hdg = Number.isFinite(t.gpsHeading) ? t.gpsHeading : smoothedHeading;
+      if (Number.isFinite(hdg)) f.hdg = ((hdg % 360) + 360) % 360;
+      return f;
+    }
+
+    // ---------- marker sulla mappa ----------
+    function renderMarkers(list) {
+      const rot = compassMode ? smoothedHeading : 0;
+      const seen = new Set();
+      list.forEach((m) => {
+        if (m.you) return; // la tua posizione e' gia' la freccia del navigatore
+        seen.add(m.id);
+        let e = markers.get(m.id);
+        if (!e) {
+          const wrap = document.createElement("div");
+          wrap.className = "team-pin-wrap";
+          wrap.style.setProperty("--c", memberColor(m.id));
+          wrap.style.transform = "rotate(" + rot + "deg)";
+          const dot = document.createElement("div");
+          dot.className = "team-pin-dot";
+          const lbl = document.createElement("div");
+          lbl.className = "team-pin-lbl";
+          wrap.appendChild(dot);
+          wrap.appendChild(lbl);
+          const mk = L.marker([m.lat, m.lon], {
+            icon: L.divIcon({ html: wrap, className: "", iconSize: [0, 0], iconAnchor: [0, 0] }),
+            interactive: false, keyboard: false, zIndexOffset: 700
+          }).addTo(map);
+          e = { mk, wrap, lbl };
+          markers.set(m.id, e);
+        } else {
+          e.mk.setLatLng([m.lat, m.lon]);
+        }
+        e.wrap.classList.toggle("stale", !!m.stale);
+        e.lbl.textContent = m.nick + (Number.isFinite(m.alt) ? " " + fmtAlt(m.alt) : ""); // textContent: nessun HTML dal nickname
+      });
+      markers.forEach((e, id) => {
+        if (!seen.has(id)) { map.removeLayer(e.mk); markers.delete(id); }
+      });
+    }
+
+
+    // ---------- INQUADRA TEAM: la mappa contiene te e tutti i compagni ----------
+    // Stesso calcolo nello spazio schermo dell'AUTO ZOOM (rotazione HDG UP e ingombro dei campi dati).
+    function setTeamFit(on) {
+      teamFit = !!on;
+      $("btnTeamFit").classList.toggle("on", teamFit);
+      if (teamFit) {
+        setAutoZoomState(false);   // AUTO ZOOM e GPS-centrato sono incompatibili con l'inquadratura del team
+        autoCenter = false;
+        $("btnCenter").classList.remove("on");
+      }
+    }
+
+    function fitTeam() {
+      const f = getAutoZoomFrame();
+      if (!f || !fitList.length) return false;
+      const P = getAutoZoomOrigin();
+      const Z0 = 10, ZMIN = 3, ZMAX = 16;
+      const p0 = map.project(L.latLng(P.lat, P.lon), Z0);
+      const rot = compassMode ? -smoothedHeading : 0;
+      let minX = 0, maxX = 0, minY = 0, maxY = 0; // la tua posizione e' l'origine
+      fitList.forEach((q) => {
+        const d = map.project(L.latLng(q.lat, q.lon), Z0);
+        const r = rotScreen(d.x - p0.x, d.y - p0.y, rot);
+        minX = Math.min(minX, r.x); maxX = Math.max(maxX, r.x);
+        minY = Math.min(minY, r.y); maxY = Math.max(maxY, r.y);
+      });
+      // margine extra per le etichette dei nickname
+      const wUse = Math.max(f.right - f.left - 60, 80);
+      const hUse = Math.max(f.bottom - f.top - 40, 80);
+      const k = Math.min(wUse / Math.max(maxX - minX, 1), hUse / Math.max(maxY - minY, 1));
+      let z = Z0 + Math.log2(k);
+      z = Math.max(ZMIN, Math.min(ZMAX, Math.floor(z * 4) / 4)); // per difetto: mai piu' vicino del necessario
+      const kz = Math.pow(2, z - Z0);
+      const cx = (f.left + f.right) / 2;
+      const cy = (f.top + f.bottom) / 2;
+      const need = rotScreen((cx - f.ax) - ((minX + maxX) / 2) * kz, (cy - f.ay) - ((minY + maxY) / 2) * kz, -rot);
+      const Pz = map.project(L.latLng(P.lat, P.lon), z);
+      const centerLL = map.unproject(L.point(Pz.x - need.x, Pz.y - need.y), z);
+      programmaticZoom = true;
+      map.setView(centerLL, z, { animate: false });
+      setTimeout(() => { programmaticZoom = false; }, 120);
+      return true;
+    }
+
+    // Ricalcolo periodico (nuova posizione, nuovo sync, rotazione bussola): al massimo ~1 volta ogni 700 ms
+    let fitTimer = null;
+    function teamFitTick(force) {
+      if (!teamFit) return;
+      if (autoZoom) { setTeamFit(false); return; } // qualcosa ha riattivato l'auto zoom: cede il controllo
+      const now = Date.now();
+      if (!force && now - lastFit < 700) {
+        // troppo presto: programma un ricalcolo finale, cosi' l'ultima rotazione/posizione non resta fuori inquadratura
+        clearTimeout(fitTimer);
+        fitTimer = setTimeout(() => teamFitTick(true), 700 - (now - lastFit) + 30);
+        return;
+      }
+      clearTimeout(fitTimer);
+      lastFit = now;
+      fitTeam();
+    }
+    window.teamFitTick = teamFitTick; // richiamata dal codice di navigazione
+
+    function flashFitLabel(txt) {
+      const el = $("btnTeamFitLbl");
+      const old = "INQUADRA TEAM";
+      el.textContent = txt;
+      setTimeout(() => { el.textContent = old; }, 1700);
+    }
+
+    // Tenta di attivare la modalita': serve almeno un compagno con posizione recente
+    function enableTeamFit() {
+      if (!fitList.length) return false;
+      setTeamFit(true);
+      fitTeam();
+      return true;
+    }
+
+    $("btnTeamFit").addEventListener("click", (ev) => {
+      if (ev.currentTarget && ev.currentTarget.blur) ev.currentTarget.blur();
+      if (teamFit) { setTeamFit(false); return; }
+      if (!enableTeamFit()) flashFitLabel("NESSUN COMPAGNO");
+    });
+    $("btnTeamFitTab").addEventListener("click", () => {
+      if (!fitList.length) { showMsg("Nessun compagno con una posizione recente da inquadrare."); return; }
+      showMsg("");
+      setTeamFit(true);
+      switchTab("viewMap"); // al rientro sulla mappa l'inquadratura viene calcolata
+    });
+    // L'utente riprende il controllo della mappa: zoom o trascinamento manuale, GPS, AUTO ZOOM
+    map.on("zoomstart", () => { if (!programmaticZoom) setTeamFit(false); });
+    map.on("dragstart", () => setTeamFit(false));
+    $("btnCenter").addEventListener("click", () => setTeamFit(false));
+    $("btnAutoZoom").addEventListener("click", () => setTeamFit(false));
+    ["resize", "orientationchange"].forEach((evn) => {
+      window.addEventListener(evn, () => setTimeout(() => teamFitTick(true), 300));
+    });
+
+    // ---------- scheda TEAM ----------
+    function focusMember(m) {
+      if (!Number.isFinite(m.lat)) return;
+      setTeamFit(false);
+      setAutoZoomState(false);
+      autoCenter = false;
+      $("btnCenter").classList.remove("on");
+      switchTab("viewMap");
+      setTimeout(() => { map.setView([m.lat, m.lon], Math.max(map.getZoom(), 15), { animate: false }); }, 120);
+    }
+
+    function renderList() {
+      const box = $("teamList");
+      box.textContent = "";
+      const hasMe = Number.isFinite(currentTelemetry.lat);
+      const rows = roster.map((m) => {
+        const hasPos = Number.isFinite(m.lat) && !m.hidden;
+        const dist = (hasMe && hasPos && !m.you)
+          ? AeronavCore.distanceMeters(currentTelemetry.lat, currentTelemetry.lon, m.lat, m.lon) : null;
+        return { m, hasPos, dist };
+      });
+      rows.sort((a, b) => (b.m.you ? 1 : 0) - (a.m.you ? 1 : 0) || (a.dist ?? 1e12) - (b.dist ?? 1e12));
+
+      rows.forEach(({ m, hasPos, dist }) => {
+        const row = document.createElement("div");
+        row.className = "team-row" + (m.stale && !m.you ? " stale" : "") + (hasPos && !m.you ? " goto" : "");
+
+        const left = document.createElement("div");
+        const nick = document.createElement("div");
+        nick.className = "team-nick";
+        const dot = document.createElement("span");
+        dot.className = "team-dot";
+        dot.style.background = memberColor(m.id);
+        const nm = document.createElement("span");
+        nm.className = "nm";
+        nm.textContent = m.nick + (m.you ? " (TU)" : "");
+        nick.appendChild(dot);
+        nick.appendChild(nm);
+        const meta = document.createElement("div");
+        meta.className = "team-meta";
+        const parts = [];
+        if (m.you) {
+          parts.push(simTimer ? "SIM attivo: posizione non inviata" : (getFix() ? "posizione inviata" : "in attesa GPS"));
+        } else if (!hasPos) {
+          parts.push("in attesa di posizione");
+        } else {
+          if (Number.isFinite(m.alt)) parts.push(fmtAlt(m.alt));
+          if (Number.isFinite(m.gs)) parts.push(fmtSpeed(m.gs));
+          if (m.stale) parts.push("ultimo agg. " + fmtAge(m.age));
+        }
+        meta.textContent = parts.join(" · ");
+        left.appendChild(nick);
+        left.appendChild(meta);
+        row.appendChild(left);
+
+        if (dist !== null) {
+          const right = document.createElement("div");
+          right.className = "team-right";
+          right.textContent = fmtDist(dist);
+          const small = document.createElement("small");
+          small.textContent = fmtBrg(AeronavCore.bearingDegrees(currentTelemetry.lat, currentTelemetry.lon, m.lat, m.lon));
+          right.appendChild(small);
+          row.appendChild(right);
+        }
+        if (hasPos && !m.you) row.addEventListener("click", () => focusMember(m));
+        box.appendChild(row);
+      });
+      $("teamCount").textContent = roster.length + (roster.length === 1 ? " membro" : " membri");
+    }
+
+    function updateBadges() {
+      const inG = AeronavTeam.inGroup();
+      let txt = "NON IN GRUPPO", cls = "";
+      if (inG) {
+        if (online === true) { txt = "CONNESSO"; cls = "on"; }
+        else if (online === false) { txt = "OFFLINE"; cls = "off"; }
+        else { txt = "CONNESSIONE..."; cls = "off"; }
+      }
+      const badge = $("teamStatus");
+      badge.textContent = txt;
+      badge.className = "team-badge " + cls;
+      const tab = $("tabTeam");
+      tab.classList.toggle("team-on", inG && online === true);
+      tab.classList.toggle("team-off", inG && online !== true);
+      const others = roster.filter((m) => !m.you).length;
+      tab.textContent = inG && others > 0 ? "TEAM (" + others + ")" : "TEAM";
+      $("btnTeamFit").style.display = inG ? "inline-flex" : "none";
+      if (!inG) setTeamFit(false);
+      syncTopbarHeight();
+    }
+
+    function renderTeamUI() {
+      const inG = AeronavTeam.inGroup();
+      const s = AeronavTeam.state();
+      $("teamJoinBox").style.display = inG ? "none" : "block";
+      $("teamGroupBox").style.display = inG ? "block" : "none";
+      $("teamMembersBox").style.display = inG ? "block" : "none";
+      if (inG) {
+        $("teamGroupTitle").textContent = s.groupName || "Team";
+        $("teamCodeBig").textContent = AeronavTeam.fmtCode(s.code);
+        $("teamMyNick").textContent = s.nick || "--";
+        renderList();
+      } else if (!$("teamNick").value) {
+        $("teamNick").value = AeronavTeam.savedNickname();
+      }
+      updateBadges();
+    }
+    window.renderTeamUI = renderTeamUI; // richiamata da switchTab()
+
+    // ---------- sincronizzazione ----------
+    function startSync() {
+      if (!AeronavTeam.inGroup()) return;
+      const srv = normServer(savedServer());
+      if (!srv) return;
+      AeronavTeam.configure({ server: srv });
+      AeronavTeam.start({
+        getFix: getFix,
+        onRoster: (list) => {
+          roster = list;
+          updateBadges();
+          if ($("viewTeam").classList.contains("active")) renderList();
+        },
+        onMembers: (list) => {
+          renderMarkers(list);
+          fitList = list.filter((m) => !m.you && !m.stale);
+          teamFitTick(true);
+        },
+        onStatus: (st) => {
+          if (st.online) { failCount = 0; online = true; }
+          else { failCount++; if (failCount >= 2) online = false; } // un singolo errore non fa lampeggiare lo stato
+          updateBadges();
+        },
+        onLost: () => {
+          roster = [];
+          online = null;
+          renderMarkers([]);
+          showMsg("Il gruppo non esiste piu' o sei stato rimosso (inattivita' o server azzerato). Crea un nuovo gruppo o rientra con il codice.");
+          renderTeamUI();
+        }
+      });
+    }
+
+    function readNick() {
+      const nick = $("teamNick").value.trim().replace(/\s+/g, " ");
+      if (!NICK_RE.test(nick)) {
+        showMsg("Nickname non valido: 2-16 caratteri tra lettere, numeri, spazio . _ -");
+        $("teamNick").focus();
+        return null;
+      }
+      return nick;
+    }
+    function readServer() {
+      const srv = normServer($("teamServer").value);
+      if (!srv) {
+        showMsg("Imposta prima l'indirizzo del server (deve iniziare con https://).");
+        $("teamServer").focus();
+        return null;
+      }
+      AeronavTeam.configure({ server: srv });
+      return srv;
+    }
+    function afterEnter(srv, okText) {
+      try { localStorage.setItem(SERVER_KEY, srv); } catch (e) {}
+      AeronavTeam.clearInviteFromUrl();
+      $("teamInvite").classList.remove("show");
+      $("teamCode").value = "";
+      online = null; failCount = 0; roster = [];
+      showMsg(okText, true);
+      renderTeamUI();
+      startSync();
+    }
+
+    async function doCreate() {
+      if (busy) return;
+      showMsg("");
+      const nick = readNick(); if (!nick) return;
+      const srv = readServer(); if (!srv) return;
+      setBusy(true);
+      try {
+        await AeronavTeam.createGroup(nick, $("teamGroupName").value.trim());
+        afterEnter(srv, "Gruppo creato. Premi INVITA per mandare il link ai compagni.");
+      } catch (e) { showMsg(errText(e)); }
+      finally { setBusy(false); }
+    }
+
+    async function doJoin() {
+      if (busy) return;
+      showMsg("");
+      const nick = readNick(); if (!nick) return;
+      const code = $("teamCode").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (code.length !== 8) { showMsg("Il codice gruppo ha 8 caratteri (es. TG99-73E2)."); $("teamCode").focus(); return; }
+      const srv = readServer(); if (!srv) return;
+      setBusy(true);
+      try {
+        await AeronavTeam.joinGroup(code, nick);
+        afterEnter(srv, "Sei entrato nel gruppo.");
+      } catch (e) { showMsg(errText(e)); }
+      finally { setBusy(false); }
+    }
+
+    async function doInvite() {
+      if (busy) return;
+      showMsg("");
+      const srv = normServer(savedServer());
+      if (srv) AeronavTeam.configure({ server: srv });
+      const r = await AeronavTeam.shareInvite();
+      if (r === "copied") showMsg("Link d'invito copiato negli appunti: incollalo in WhatsApp, Telegram o SMS.", true);
+      else if (r === "failed") showMsg("Impossibile condividere. Link da inviare: " + AeronavTeam.inviteLink());
+    }
+
+    async function doLeave() {
+      if (busy || !confirm("Uscire dal gruppo? Gli altri non vedranno piu' la tua posizione.")) return;
+      setBusy(true);
+      try { await AeronavTeam.leave(); } finally { setBusy(false); }
+      roster = []; online = null; failCount = 0;
+      renderMarkers([]);
+      showMsg("Sei uscito dal gruppo.", true);
+      renderTeamUI();
+    }
+
+    function saveServer() {
+      const srv = normServer($("teamServer").value);
+      if (!srv) { showMsg("Indirizzo non valido: deve iniziare con https://"); return null; }
+      try { localStorage.setItem(SERVER_KEY, srv); } catch (e) {}
+      $("teamServer").value = srv;
+      AeronavTeam.configure({ server: srv });
+      $("teamServerNote").textContent = /^http:/i.test(srv) ? "ATTENZIONE: http non funziona da una PWA https" : "";
+      showMsg("Server salvato.", true);
+      if (AeronavTeam.inGroup()) startSync();
+      return srv;
+    }
+
+    async function testServer() {
+      const srv = normServer($("teamServer").value);
+      if (!srv) { showMsg("Indirizzo non valido: deve iniziare con https://"); return; }
+      showMsg("Test in corso...", true);
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 7000);
+      try {
+        const r = await fetch(srv + "/health", { signal: ctl.signal });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok && d.status === "ok") showMsg("Server raggiungibile: " + hostOf(srv), true);
+        else showMsg("Il server ha risposto in modo inatteso (HTTP " + r.status + ").");
+      } catch (e) {
+        showMsg("Server non raggiungibile: controlla l'indirizzo, il reverse proxy/tunnel e la connessione.");
+      } finally { clearTimeout(t); }
+    }
+
+    $("btnTeamCreate").addEventListener("click", doCreate);
+    $("btnTeamJoin").addEventListener("click", doJoin);
+    $("btnTeamInvite").addEventListener("click", doInvite);
+    $("btnTeamLeave").addEventListener("click", doLeave);
+    $("btnTeamServerSave").addEventListener("click", saveServer);
+    $("btnTeamServerTest").addEventListener("click", testServer);
+
+    // ---------- avvio ----------
+    $("teamServer").value = savedServer();
+    const inviteCode = AeronavTeam.pendingInvite();
+    if (inviteCode && !AeronavTeam.inGroup()) {
+      // Link d'invito: precompila codice (e server, se presente) ma NON entra da solo
+      const invSrv = normServer(AeronavTeam.pendingInviteServer());
+      if (invSrv) $("teamServer").value = invSrv;
+      $("teamCode").value = AeronavTeam.fmtCode(inviteCode);
+      const banner = $("teamInvite");
+      const srvForInfo = normServer($("teamServer").value);
+      const base = "Hai ricevuto un invito. Scegli il tuo nickname e premi ENTRA.";
+      const srvNote = invSrv && invSrv !== normServer(savedServer())
+        ? " Il link usa il server " + hostOf(invSrv) + ": entra solo se ti fidi di chi te l'ha mandato." : "";
+      banner.textContent = base + srvNote;
+      banner.classList.add("show");
+      if (srvForInfo) {
+        AeronavTeam.configure({ server: srvForInfo });
+        AeronavTeam.groupInfo(inviteCode).then((info) => {
+          banner.textContent = "Invito al gruppo \"" + info.group_name + "\" (" + info.members + (info.members === 1 ? " membro" : " membri") + "). Scegli il tuo nickname e premi ENTRA." + srvNote;
+        }).catch(() => {});
+      }
+      switchTab("viewTeam");
+    } else if (inviteCode) {
+      AeronavTeam.clearInviteFromUrl();
+    }
+    if (!$("teamServer").value) $("teamServerNote").textContent = "DA IMPOSTARE";
+    renderTeamUI();
+    startSync();
+  })();
+  </script>
+
+  <!-- ======================= ORIENTAMENTO SCHERMO + SCHERMO SEMPRE ACCESO ======================= -->
+  <div id="orientToast" class="orient-toast"></div>
+  <script>
+    (function () {
+      "use strict";
+      var KEY = "aeronav_haho_orient_v1";
+      var MODES = ["auto", "landscape", "portrait"];
+      var LABEL = { auto: "\u21bb AUTO", landscape: "\u21bb ORIZ", portrait: "\u21bb VERT" };
+      var btn = document.getElementById("btnOrient");
+      var toastEl = document.getElementById("orientToast");
+      var toastTimer = null;
+      var fsByUs = false;
+      var mode = "auto";
+      try { var saved = localStorage.getItem(KEY); if (MODES.indexOf(saved) >= 0) mode = saved; } catch (e) { /* ignora */ }
+
+      function toast(txt) {
+        toastEl.textContent = txt;
+        toastEl.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 5000);
+      }
+      function paint() {
+        btn.textContent = LABEL[mode];
+        btn.classList.toggle("lock-on", mode !== "auto");
+      }
+      function relayout() {
+        // lascia che mappa, campi dati e auto zoom si ricalcolino con il nuovo orientamento
+        setTimeout(function () { window.dispatchEvent(new Event("resize")); }, 250);
+      }
+
+      // Blocca l'orientamento. Su Android funziona nella PWA installata; in una scheda del browser
+      // serve la modalita' a schermo intero (richiesta solo se l'utente ha toccato il pulsante).
+      async function lockTo(type, interactive) {
+        var so = screen.orientation;
+        if (!so || !so.lock) return false;
+        try { await so.lock(type); return true; } catch (e1) {
+          if (!interactive || !document.documentElement.requestFullscreen) return false;
+          try {
+            if (!document.fullscreenElement) {
+              await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+              fsByUs = true;
+            }
+            await so.lock(type);
+            return true;
+          } catch (e2) {
+            if (fsByUs) { try { await document.exitFullscreen(); } catch (e3) { /* ignora */ } fsByUs = false; }
+            return false;
+          }
+        }
+      }
+      async function applyMode(interactive) {
+        if (mode === "auto") {
+          try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) { /* ignora */ }
+          if (fsByUs && document.fullscreenElement) { try { await document.exitFullscreen(); } catch (e) { /* ignora */ } }
+          fsByUs = false;
+          return true;
+        }
+        return lockTo(mode, interactive);
+      }
+
+      btn.addEventListener("click", async function () {
+        mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
+        var ok = await applyMode(true);
+        if (!ok) {
+          mode = "auto";
+          toast("Questo browser non permette di bloccare l'orientamento. Installa l'app (PWA) oppure attiva la rotazione automatica del dispositivo e ruotalo a mano.");
+        } else {
+          try { localStorage.setItem(KEY, mode); } catch (e) { /* ignora */ }
+        }
+        paint();
+        relayout();
+        if (typeof syncTopbarHeight === "function") syncTopbarHeight();
+      });
+
+      // se l'utente esce dallo schermo intero (gesto di sistema) il blocco decade: torna in AUTO
+      document.addEventListener("fullscreenchange", function () {
+        if (fsByUs && !document.fullscreenElement) {
+          fsByUs = false;
+          mode = "auto";
+          paint();
+        }
+      });
+      var mq = window.matchMedia("(orientation: landscape)");
+      var onMq = function () { if (typeof syncTopbarHeight === "function") syncTopbarHeight(); relayout(); };
+      if (mq.addEventListener) mq.addEventListener("change", onMq); else if (mq.addListener) mq.addListener(onMq);
+
+      paint();
+      if (mode !== "auto") {
+        // all'avvio: riapplica l'ultima scelta se possibile (PWA installata); altrimenti resta in AUTO senza disturbare
+        applyMode(false).then(function (ok) { if (!ok) { mode = "auto"; paint(); } });
+      }
+
+      // ---- schermo sempre acceso (Screen Wake Lock) ----
+      var sentinel = null;
+      async function keepAwake() {
+        if (!("wakeLock" in navigator) || document.visibilityState !== "visible") return;
+        if (sentinel && !sentinel.released) return;
+        try {
+          sentinel = await navigator.wakeLock.request("screen");
+          sentinel.addEventListener("release", function () { sentinel = null; });
+        } catch (e) { /* risparmio energetico o permesso negato: si riprova al prossimo evento */ }
+      }
+      document.addEventListener("visibilitychange", keepAwake);
+      window.addEventListener("pageshow", keepAwake);
+      window.addEventListener("focus", keepAwake);
+      ["pointerdown", "touchstart", "keydown"].forEach(function (ev) {
+        document.addEventListener(ev, keepAwake, { passive: true });
+      });
+      setInterval(keepAwake, 30000);
+      keepAwake();
+    })();
+  </script>
+</body>
+</html>
