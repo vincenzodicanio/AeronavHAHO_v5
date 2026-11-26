@@ -235,6 +235,35 @@
     .wind-add { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: 6px; align-items: end; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); }
     .lg-line { display: inline-block; width: 24px; height: 5px; border-radius: 3px; margin-right: 7px; vertical-align: middle; }
     .warn-msg { font-size: 11px; color: var(--amber); margin-top: 6px; min-height: 0; }
+    .map-cache-box {
+      background: rgba(9, 14, 23, 0.90);
+      color: #f1f5f9;
+      padding: 7px 9px;
+      border-radius: 6px;
+      border: 1px solid #263349;
+      font-size: 11px;
+      max-width: 240px;
+      line-height: 1.4;
+    }
+    .map-cache-box button {
+      width: 100%;
+      justify-content: center;
+      margin-top: 4px;
+    }
+    .map-cache-bar {
+      height: 5px;
+      background: #1e293b;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 5px;
+      display: none;
+    }
+    .map-cache-bar > div {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.15s;
+    }
   </style>
 </head>
 <body>
@@ -659,25 +688,155 @@
       hourSelect.appendChild(opt);
     }
 
-    const MAP_KEY = "aeronav_haho_maptype_v1";
-    let savedMapType = "osm";
-    try { if (localStorage.getItem(MAP_KEY) === "sat") savedMapType = "sat"; } catch (e) {}
+    const MAP_KEY = "aeronav_haho_maptype_v2";
+    const TILE_CACHE_NAME = "aeronavhaho-tiles-v1";
+    let savedMapType = "sat";
+    try {
+      const m = localStorage.getItem(MAP_KEY);
+      if (m === "sat" || m === "topo") savedMapType = m;
+    } catch (e) {}
 
     const map = L.map("map", { zoomControl: true }).setView([state.dipLat, state.dipLon], 12);
-    const baseOsm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18,
-      attribution: "&copy; OpenStreetMap | NOAA GFS"
+
+    // Layer gratuiti per uso commerciale (dati pubblici / CC BY 4.0) con caching locale automatico + pre-download area
+    const SAT_URL = "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg";
+    const TOPO_URL = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/ASTER_GDEM_Color_Shaded_Relief/default/GoogleMapsCompatible_Level12/{z}/{y}/{x}.jpg";
+
+    const baseSat = L.tileLayer(SAT_URL, {
+      maxZoom: 17,
+      maxNativeZoom: 13,
+      crossOrigin: "anonymous",
+      attribution: 'Sentinel-2 cloudless &copy; <a href="https://s2maps.eu" target="_blank">EOX</a> (CC BY 4.0) | NOAA GFS'
     });
-    const baseSat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-      maxZoom: 19,
-      maxNativeZoom: 18,
-      attribution: "Imagery &copy; Esri | NOAA GFS"
+    const baseTopo = L.tileLayer(TOPO_URL, {
+      maxZoom: 17,
+      maxNativeZoom: 12,
+      crossOrigin: "anonymous",
+      attribution: 'ASTER GDEM &copy; NASA EOSDIS GIBS (Public Domain) | NOAA GFS'
     });
-    (savedMapType === "sat" ? baseSat : baseOsm).addTo(map);
-    L.control.layers({ "Stradale (OSM)": baseOsm, "Satellite": baseSat }, null, { position: "topright" }).addTo(map);
+
+    (savedMapType === "topo" ? baseTopo : baseSat).addTo(map);
+    L.control.layers(
+      { "Satellite (EOX Sentinel-2)": baseSat, "Rilievo (NASA GIBS)": baseTopo },
+      null,
+      { position: "topright" }
+    ).addTo(map);
+
     map.on("baselayerchange", (e) => {
-      try { localStorage.setItem(MAP_KEY, e.layer === baseSat ? "sat" : "osm"); } catch (err) {}
+      savedMapType = e.layer === baseTopo ? "topo" : "sat";
+      try { localStorage.setItem(MAP_KEY, savedMapType); } catch (err) {}
+      updateTileCacheStats();
     });
+
+    // Controllo su mappa per scaricare i tile dell'area inquadrata nella Cache Storage locale
+    const cacheCtrl = L.control({ position: "bottomright" });
+    cacheCtrl.onAdd = () => {
+      const div = L.DomUtil.create("div", "map-cache-box");
+      L.DomEvent.disableClickPropagation(div);
+      L.DomEvent.disableScrollPropagation(div);
+      div.innerHTML =
+        `<div style="font-weight:700; color:var(--cyan);">MAPPA OFFLINE LOCALE</div>` +
+        `<div id="tileCacheInfo" style="color:var(--muted); font-size:10px;">Tile salvati in locale: verifica...</div>` +
+        `<button type="button" class="btn btn-cyan" id="btnCacheArea">SCARICA AREA (Z8–13)</button>` +
+        `<button type="button" class="btn" id="btnClearTiles" style="font-size:10px; padding:4px 6px;">SVUOTA CACHE MAPPE</button>` +
+        `<div class="map-cache-bar" id="tileCacheBar"><div id="tileCacheFill"></div></div>`;
+      return div;
+    };
+    cacheCtrl.addTo(map);
+
+    function lonToTileX(lon, z) { return Math.floor(((lon + 180) / 360) * Math.pow(2, z)); }
+    function latToTileY(lat, z) {
+      const rad = (lat * Math.PI) / 180;
+      return Math.floor(((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * Math.pow(2, z));
+    }
+
+    async function updateTileCacheStats() {
+      const info = document.getElementById("tileCacheInfo");
+      if (!info) return;
+      if (!("caches" in window)) {
+        info.textContent = "Cache locale non supportata.";
+        return;
+      }
+      try {
+        const cache = await caches.open(TILE_CACHE_NAME);
+        const keys = await cache.keys();
+        info.textContent = `Tile salvati in locale: ${keys.length}`;
+      } catch (e) {
+        info.textContent = "Tile salvati in locale: n/d";
+      }
+    }
+
+    let downloadingTiles = false;
+    async function downloadVisibleAreaTiles() {
+      if (downloadingTiles || !("caches" in window)) return;
+      downloadingTiles = true;
+      const btn = document.getElementById("btnCacheArea");
+      const bar = document.getElementById("tileCacheBar");
+      const fill = document.getElementById("tileCacheFill");
+      const info = document.getElementById("tileCacheInfo");
+      btn.disabled = true;
+      bar.style.display = "block";
+      fill.style.width = "0%";
+
+      const isTopo = savedMapType === "topo";
+      const tpl = isTopo ? TOPO_URL : SAT_URL;
+      const maxNative = isTopo ? 12 : 13;
+      const bounds = map.getBounds().pad(0.2);
+      const urls = [];
+
+      for (let z = 8; z <= maxNative; z++) {
+        const xMin = Math.max(0, lonToTileX(bounds.getWest(), z));
+        const xMax = Math.min(Math.pow(2, z) - 1, lonToTileX(bounds.getEast(), z));
+        const yMin = Math.max(0, latToTileY(bounds.getNorth(), z));
+        const yMax = Math.min(Math.pow(2, z) - 1, latToTileY(bounds.getSouth(), z));
+        for (let x = xMin; x <= xMax; x++) {
+          for (let y = yMin; y <= yMax; y++) {
+            urls.push(tpl.replace("{z}", z).replace("{x}", x).replace("{y}", y));
+          }
+        }
+      }
+
+      const capped = urls.slice(0, 600);
+      const cache = await caches.open(TILE_CACHE_NAME);
+      let done = 0, ok = 0;
+
+      const BATCH = 6;
+      for (let i = 0; i < capped.length; i += BATCH) {
+        const slice = capped.slice(i, i + BATCH);
+        await Promise.all(slice.map(async (u) => {
+          try {
+            const existing = await cache.match(u);
+            if (existing) { ok++; return; }
+            const resp = await fetch(u, { mode: "cors" });
+            if (resp.ok) {
+              await cache.put(u, resp.clone());
+              ok++;
+            }
+          } catch (e) {}
+          finally {
+            done++;
+            fill.style.width = Math.round((done / capped.length) * 100) + "%";
+            info.textContent = `Download: ${done}/${capped.length} tile...`;
+          }
+        }));
+      }
+
+      downloadingTiles = false;
+      btn.disabled = false;
+      setTimeout(() => { bar.style.display = "none"; }, 1200);
+      await updateTileCacheStats();
+      info.textContent += ` (+${ok} pronti offline)`;
+    }
+
+    setTimeout(() => {
+      updateTileCacheStats();
+      document.getElementById("btnCacheArea")?.addEventListener("click", downloadVisibleAreaTiles);
+      document.getElementById("btnClearTiles")?.addEventListener("click", async () => {
+        if (!("caches" in window)) return;
+        await caches.delete(TILE_CACHE_NAME);
+        updateTileCacheStats();
+      });
+    }, 100);
 
     const dipIcon = L.divIcon({
       html: `<div style="width:20px;height:20px;background:#ef4444;border:3px solid #fff;border-radius:50%;box-shadow:0 0 10px #ef4444;"></div>`,
