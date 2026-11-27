@@ -516,6 +516,21 @@
       color: var(--accent);
     }
 
+    .map-cache-bar {
+      height: 5px;
+      background: #090e17;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 8px;
+      display: none;
+    }
+    .map-cache-bar > div {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.15s;
+    }
+
     .compass-cal-box {
       display: flex;
       flex-direction: column;
@@ -943,23 +958,27 @@
         </div>
       </div>
 
-      <!-- Sezione: Tipo di mappa (stradale / satellitare) -->
+      <!-- Sezione: Tipo di mappa (Satellite EOX Sentinel-2 / Rilievo NASA GIBS) -->
       <div class="panel-box">
         <div class="panel-title">
           <span>MAPPA DI SFONDO</span>
           <span style="color:var(--amber); font-size:10px;">SALVATAGGIO AUTOMATICO</span>
         </div>
         <div class="unit-group">
-          <button type="button" class="unit-opt active" id="optMapOsm" data-map-type="osm">STRADALE (OSM)</button>
-          <button type="button" class="unit-opt" id="optMapSat" data-map-type="sat">SATELLITE</button>
+          <button type="button" class="unit-opt active" id="optMapSat" data-map-type="sat">SATELLITE (EOX)</button>
+          <button type="button" class="unit-opt" id="optMapTopo" data-map-type="topo">RILIEVO (NASA)</button>
         </div>
         <div id="mapSummaryNote" style="font-size:11px; color:var(--muted); margin-top:10px; line-height:1.4;">
-          Satellite = Esri World Imagery. Le porzioni di mappa che visualizzi (a ogni zoom) vengono salvate automaticamente e riutilizzate offline; le zone mai viste restano vuote senza connessione. Sincronizzata anche con il Planner HAHO.
+          Satellite = Sentinel-2 cloudless (EOX) · Rilievo = ASTER GDEM (NASA EOSDIS GIBS). I tasselli visualizzati vengono salvati automaticamente e condivisi con il Planner HAHO per l'uso offline.
         </div>
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px;">
-          <span id="tileCacheInfo" style="font-size:11px; color:var(--muted);">Mappe salvate: --</span>
-          <button type="button" class="btn-dem" id="btnClearTiles" style="padding:6px 10px;">SVUOTA</button>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; flex-wrap:wrap;">
+          <span id="tileCacheInfo" style="font-size:11px; color:var(--muted);">Tile salvati in locale: verifica...</span>
+          <div style="display:flex; gap:6px;">
+            <button type="button" class="btn-dem" id="btnCacheArea" style="padding:6px 10px;">SCARICA AREA (Z8–13)</button>
+            <button type="button" class="btn-dem" id="btnClearTiles" style="padding:6px 10px;">SVUOTA</button>
+          </div>
         </div>
+        <div class="map-cache-bar" id="tileCacheBar"><div id="tileCacheFill"></div></div>
       </div>
 
       <!-- Sezione 2: Unità di Misura (ft, m, knots, m/s) -->
@@ -1195,49 +1214,134 @@
     const activeDip = getActiveDip();
     L.Marker.mergeOptions({ keyboard: false });
     const map = L.map("map", { zoomControl: false, attributionControl: false, zoomSnap: 0.25, keyboard: false }).setView([activeDip.lat, activeDip.lon], 13);
-    const MAP_KEY = "aeronav_haho_maptype_v1";
-    let mapType = "osm";
-    try { if (localStorage.getItem(MAP_KEY) === "sat") mapType = "sat"; } catch (e) {}
+    const MAP_KEY = "aeronav_haho_maptype_v2";
+    const TILE_CACHE_NAME = "aeronavhaho-tiles-v1";
+    const SAT_URL = "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg";
+    const TOPO_URL = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/ASTER_GDEM_Color_Shaded_Relief/default/GoogleMapsCompatible_Level12/{z}/{y}/{x}.jpg";
+
+    let mapType = "sat";
+    try {
+      const m = localStorage.getItem(MAP_KEY);
+      if (m === "sat" || m === "topo") mapType = m;
+    } catch (e) {}
 
     function buildBaseLayer(type) {
-      if (type === "sat") {
-        return L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-          maxZoom: 19,
-          maxNativeZoom: 18
+      if (type === "topo") {
+        return L.tileLayer(TOPO_URL, {
+          maxZoom: 17,
+          maxNativeZoom: 12,
+          crossOrigin: "anonymous"
         });
       }
-      return L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 });
+      return L.tileLayer(SAT_URL, {
+        maxZoom: 17,
+        maxNativeZoom: 13,
+        crossOrigin: "anonymous"
+      });
     }
 
     let baseLayer = buildBaseLayer(mapType).addTo(map);
 
-    const TILE_CACHE_NAME = "aeronav-tiles-v1";
+    function lonToTileX(lon, z) { return Math.floor(((lon + 180) / 360) * Math.pow(2, z)); }
+    function latToTileY(lat, z) {
+      const rad = (lat * Math.PI) / 180;
+      return Math.floor(((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * Math.pow(2, z));
+    }
 
     async function updateTileCacheInfo() {
       const el = document.getElementById("tileCacheInfo");
       if (!el) return;
+      if (!("caches" in window)) {
+        el.textContent = "Cache locale non supportata.";
+        return;
+      }
       try {
         const cache = await caches.open(TILE_CACHE_NAME);
         const n = (await cache.keys()).length;
-        el.textContent = "Mappe salvate offline: " + n.toLocaleString("it-IT") + " tasselli";
+        el.textContent = "Tile salvati in locale: " + n.toLocaleString("it-IT");
       } catch (e) {
-        el.textContent = "Cache mappe non disponibile";
+        el.textContent = "Tile salvati in locale: n/d";
       }
     }
 
+    let downloadingTiles = false;
+    async function downloadVisibleAreaTiles() {
+      if (downloadingTiles || !("caches" in window)) return;
+      downloadingTiles = true;
+      const btn = document.getElementById("btnCacheArea");
+      const bar = document.getElementById("tileCacheBar");
+      const fill = document.getElementById("tileCacheFill");
+      const info = document.getElementById("tileCacheInfo");
+      btn.disabled = true;
+      bar.style.display = "block";
+      fill.style.width = "0%";
+
+      const isTopo = mapType === "topo";
+      const tpl = isTopo ? TOPO_URL : SAT_URL;
+      const maxNative = isTopo ? 12 : 13;
+      const bounds = map.getBounds().pad(0.2);
+      const urls = [];
+
+      for (let z = 8; z <= maxNative; z++) {
+        const xMin = Math.max(0, lonToTileX(bounds.getWest(), z));
+        const xMax = Math.min(Math.pow(2, z) - 1, lonToTileX(bounds.getEast(), z));
+        const yMin = Math.max(0, latToTileY(bounds.getNorth(), z));
+        const yMax = Math.min(Math.pow(2, z) - 1, latToTileY(bounds.getSouth(), z));
+        for (let x = xMin; x <= xMax; x++) {
+          for (let y = yMin; y <= yMax; y++) {
+            urls.push(tpl.replace("{z}", z).replace("{x}", x).replace("{y}", y));
+          }
+        }
+      }
+
+      const capped = urls.slice(0, 600);
+      const cache = await caches.open(TILE_CACHE_NAME);
+      let done = 0, ok = 0;
+
+      const BATCH = 6;
+      for (let i = 0; i < capped.length; i += BATCH) {
+        const slice = capped.slice(i, i + BATCH);
+        await Promise.all(slice.map(async (u) => {
+          try {
+            const existing = await cache.match(u);
+            if (existing) { ok++; return; }
+            const resp = await fetch(u, { mode: "cors" });
+            if (resp.ok) {
+              await cache.put(u, resp.clone());
+              ok++;
+            }
+          } catch (e) {}
+          finally {
+            done++;
+            fill.style.width = Math.round((done / capped.length) * 100) + "%";
+            info.textContent = `Download: ${done}/${capped.length} tile...`;
+          }
+        }));
+      }
+
+      downloadingTiles = false;
+      btn.disabled = false;
+      setTimeout(() => { bar.style.display = "none"; }, 1200);
+      await updateTileCacheInfo();
+      info.textContent += ` (+${ok} pronti offline)`;
+    }
+
+    document.getElementById("btnCacheArea").addEventListener("click", downloadVisibleAreaTiles);
     document.getElementById("btnClearTiles").addEventListener("click", async () => {
+      if (!("caches" in window)) return;
       try { await caches.delete(TILE_CACHE_NAME); } catch (e) {}
       updateTileCacheInfo();
     });
 
     function setMapType(type) {
-      if (type !== "osm" && type !== "sat") return;
+      if (type !== "sat" && type !== "topo") return;
       mapType = type;
       try { localStorage.setItem(MAP_KEY, mapType); } catch (e) {}
       map.removeLayer(baseLayer);
       baseLayer = buildBaseLayer(mapType).addTo(map);
       baseLayer.bringToBack();
       renderSettingsUI();
+      updateTileCacheInfo();
     }
 
     map.on("zoomstart", () => {
@@ -1774,8 +1878,8 @@
       document.getElementById("cfgCompassOffset").value = Math.round(Number(navState.compassOffsetDeg) || 0);
       updateCalDialUI();
 
-      document.getElementById("optMapOsm").classList.toggle("active", mapType === "osm");
       document.getElementById("optMapSat").classList.toggle("active", mapType === "sat");
+      document.getElementById("optMapTopo").classList.toggle("active", mapType === "topo");
       document.getElementById("optAltFt").classList.toggle("active", navState.altUnit === "ft");
       document.getElementById("optAltM").classList.toggle("active", navState.altUnit === "m");
       document.getElementById("optSpdKt").classList.toggle("active", navState.spdUnit === "kt");
